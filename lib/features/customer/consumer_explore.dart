@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../auth/backend_service.dart';
@@ -23,11 +24,22 @@ class ConsumerExplorePage extends StatefulWidget {
 
 class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
   final _mapController = MapController();
-  late Future<List<_NearbySale>> _sales = _load();
+  late LatLng _position;
+  late Future<List<_NearbySale>> _sales;
   bool _showList = false;
+  bool _usingLiveLocation = false;
+  bool _locating = false;
   String? _selectedId;
 
-  Future<List<_NearbySale>> _load() async {
+  @override
+  void initState() {
+    super.initState();
+    _position = LatLng(widget.location.latitude, widget.location.longitude);
+    _sales = _load(_position);
+    _useCurrentLocation();
+  }
+
+  Future<List<_NearbySale>> _load(LatLng origin) async {
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
     if (token == null) throw StateError('Please sign in again.');
     final dio = Dio(
@@ -41,13 +53,21 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
     final response = await dio.post<Map<String, dynamic>>(
       '',
       data: {
-        'query': '''query NearbyHotSales {
-          nearbyHotSales(radiusKm: 50, limit: 50) {
+        'query': '''query NearbyHotSales(\$latitude: Float!, \$longitude: Float!) {
+          nearbyHotSales(radiusKm: 50, limit: 50, latitude: \$latitude, longitude: \$longitude) {
             id originalTitle description unit customUnit priceCents quantity
+            productionDetail producedAt availableAtFarm
             imageMimeType imageBase64 farmId farmName farmProfilePhotoUrl
             latitude longitude farmAddress farmCity distanceKm
+            rekoRings { id name municipality regionName addressLine postalCode
+              schedule { frequency weekday startTime endTime timezone }
+            }
           }
         }''',
+        'variables': {
+          'latitude': origin.latitude,
+          'longitude': origin.longitude,
+        },
       },
       options: Options(headers: {'authorization': 'Bearer $token'}),
     );
@@ -65,11 +85,52 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
         .toList();
   }
 
-  void _retry() => setState(() => _sales = _load());
+  void _retry() => setState(() => _sales = _load(_position));
+
+  Future<void> _useCurrentLocation() async {
+    if (_locating) return;
+    setState(() => _locating = true);
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+      final current = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      final point = LatLng(current.latitude, current.longitude);
+      setState(() {
+        _position = point;
+        _usingLiveLocation = true;
+        _sales = _load(point);
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _showList) return;
+        _mapController.move(point, 13.5);
+      });
+    } catch (_) {
+      // Keep using the confirmed registration location when live GPS is
+      // unavailable, denied, or unsupported by the current browser.
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
 
   void _select(_NearbySale sale) {
     setState(() => _selectedId = sale.id);
-    _mapController.move(LatLng(sale.latitude, sale.longitude), 15.5);
+    if (!_showList) {
+      _mapController.move(LatLng(sale.latitude, sale.longitude), 15.5);
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _SaleDetailsSheet(sale: sale),
+    );
   }
 
   @override
@@ -97,7 +158,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
                       ? _SalesList(sales: sales, onSelect: _select)
                       : _SalesMap(
                         controller: _mapController,
-                        location: widget.location,
+                        position: _position,
                         sales: sales,
                         selectedId: _selectedId,
                         onSelect: _select,
@@ -107,11 +168,16 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
               child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: _ExploreHeader(
-                  location: widget.location,
+                  locationName:
+                      _usingLiveLocation
+                          ? 'Current location'
+                          : widget.location.city,
                   count: sales.length,
                   showList: _showList,
                   onToggle: () => setState(() => _showList = !_showList),
                   onRefresh: _retry,
+                  onLocate: _useCurrentLocation,
+                  locating: _locating,
                 ),
               ),
             ),
@@ -133,21 +199,21 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
 class _SalesMap extends StatelessWidget {
   const _SalesMap({
     required this.controller,
-    required this.location,
+    required this.position,
     required this.sales,
     required this.selectedId,
     required this.onSelect,
   });
 
   final MapController controller;
-  final ConfirmedLocation location;
+  final LatLng position;
   final List<_NearbySale> sales;
   final String? selectedId;
   final ValueChanged<_NearbySale> onSelect;
 
   @override
   Widget build(BuildContext context) {
-    final center = LatLng(location.latitude, location.longitude);
+    final center = position;
     return FlutterMap(
       mapController: controller,
       options: MapOptions(initialCenter: center, initialZoom: 12.5),
@@ -186,17 +252,21 @@ class _SalesMap extends StatelessWidget {
 
 class _ExploreHeader extends StatelessWidget {
   const _ExploreHeader({
-    required this.location,
+    required this.locationName,
     required this.count,
     required this.showList,
     required this.onToggle,
     required this.onRefresh,
+    required this.onLocate,
+    required this.locating,
   });
-  final ConfirmedLocation location;
+  final String locationName;
   final int count;
   final bool showList;
   final VoidCallback onToggle;
   final VoidCallback onRefresh;
+  final VoidCallback onLocate;
+  final bool locating;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -207,15 +277,24 @@ class _ExploreHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
       child: Row(
         children: [
-          const Icon(Icons.near_me_rounded, color: _green),
-          const SizedBox(width: 10),
+          IconButton(
+            tooltip: 'Use current location',
+            onPressed: locating ? null : onLocate,
+            icon:
+                locating
+                    ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : const Icon(Icons.my_location_rounded, color: _green),
+          ),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('$count Hot Sales nearby', style: const TextStyle(fontWeight: FontWeight.w800)),
-                Text(location.city, maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(locationName, maxLines: 1, overflow: TextOverflow.ellipsis),
               ],
             ),
           ),
@@ -328,6 +407,195 @@ class _UserMarker extends StatelessWidget {
   );
 }
 
+class _SaleDetailsSheet extends StatelessWidget {
+  const _SaleDetailsSheet({required this.sale});
+  final _NearbySale sale;
+
+  @override
+  Widget build(BuildContext context) => FractionallySizedBox(
+    heightFactor: .9,
+    child: Material(
+      color: _cream,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          const SizedBox(height: 10),
+          Container(
+            width: 42,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.black26,
+              borderRadius: BorderRadius.circular(99),
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 32),
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Image.memory(
+                    sale.imageBytes,
+                    height: 245,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        sale.title,
+                        style: const TextStyle(
+                          fontSize: 25,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      sale.price,
+                      style: const TextStyle(
+                        color: _green,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${sale.quantityLabel} available • ${sale.distanceKm.toStringAsFixed(1)} km away',
+                  style: const TextStyle(color: Colors.black54),
+                ),
+                const SizedBox(height: 18),
+                Text(sale.description, style: const TextStyle(height: 1.5)),
+                if (sale.productionDetail?.isNotEmpty == true) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    sale.productionDetail!,
+                    style: const TextStyle(
+                      color: Colors.black54,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 24),
+                const Text(
+                  'Sold by',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 25,
+                        backgroundColor: const Color(0xFFE5EFDF),
+                        backgroundImage:
+                            sale.farmProfilePhotoUrl?.isNotEmpty == true
+                                ? NetworkImage(sale.farmProfilePhotoUrl!)
+                                : null,
+                        child:
+                            sale.farmProfilePhotoUrl?.isNotEmpty == true
+                                ? null
+                                : Text(
+                                  sale.farmName.characters.first.toUpperCase(),
+                                  style: const TextStyle(
+                                    color: _green,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(sale.farmName, style: const TextStyle(fontWeight: FontWeight.w900)),
+                            if (sale.farmLocation.isNotEmpty)
+                              Text(sale.farmLocation, style: const TextStyle(color: Colors.black54)),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.storefront_outlined, color: _green),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Available at',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 10),
+                if (sale.availableAtFarm)
+                  _PickupCard(
+                    icon: Icons.storefront_rounded,
+                    title: 'Farm pickup',
+                    subtitle:
+                        sale.farmLocation.isEmpty
+                            ? sale.farmName
+                            : sale.farmLocation,
+                  ),
+                for (final ring in sale.rekoRings)
+                  _PickupCard(
+                    icon: Icons.location_on_rounded,
+                    title: ring.name,
+                    subtitle: ring.details,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _PickupCard extends StatelessWidget {
+  const _PickupCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 9),
+    padding: const EdgeInsets.all(13),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFE1E8DD)),
+    ),
+    child: Row(
+      children: [
+        Icon(icon, color: _green),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+              Text(subtitle, style: const TextStyle(color: Colors.black54)),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class _EmptyMapCard extends StatelessWidget {
   const _EmptyMapCard();
   @override
@@ -374,13 +642,53 @@ class _NearbySale {
   final Map<String, dynamic> json;
   String get id => json['id'] as String;
   String get title => json['originalTitle'] as String;
+  String get description => json['description'] as String;
+  String? get productionDetail => json['productionDetail'] as String?;
   String get farmName => json['farmName'] as String;
+  String? get farmProfilePhotoUrl => json['farmProfilePhotoUrl'] as String?;
+  String get farmLocation => [
+    json['farmAddress'] as String?,
+    json['farmCity'] as String?,
+  ].where((value) => value?.isNotEmpty == true).join(', ');
   double get latitude => (json['latitude'] as num).toDouble();
   double get longitude => (json['longitude'] as num).toDouble();
   double get distanceKm => (json['distanceKm'] as num).toDouble();
   double get quantity => (json['quantity'] as num).toDouble();
+  bool get availableAtFarm => json['availableAtFarm'] as bool? ?? false;
+  List<_RekoPickup> get rekoRings =>
+      ((json['rekoRings'] as List<dynamic>?) ?? const [])
+          .map((ring) => _RekoPickup(ring as Map<String, dynamic>))
+          .toList();
   String get unit => (json['customUnit'] as String?) ?? (json['unit'] as String).toLowerCase();
   Uint8List get imageBytes => base64Decode(json['imageBase64'] as String);
   String get price => '€${((json['priceCents'] as num) / 100).toStringAsFixed(2)} / $unit';
   String get quantityLabel => '${quantity.toStringAsFixed(quantity % 1 == 0 ? 0 : 1)} $unit';
+}
+
+class _RekoPickup {
+  const _RekoPickup(this.json);
+  final Map<String, dynamic> json;
+  String get name => json['name'] as String;
+  String get details {
+    final schedule = json['schedule'] as Map<String, dynamic>?;
+    final weekday = schedule?['weekday'] as int?;
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    final when =
+        weekday != null && weekday >= 1 && weekday <= 7
+            ? '${days[weekday - 1]} ${schedule?['startTime']}–${schedule?['endTime']}'
+            : null;
+    return [
+      json['addressLine'] as String?,
+      json['municipality'] as String?,
+      when,
+    ].where((value) => value?.isNotEmpty == true).join(' • ');
+  }
 }
