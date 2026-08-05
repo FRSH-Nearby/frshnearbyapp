@@ -3759,10 +3759,11 @@ class _ProfileIdentityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Column(
     children: [
-      Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.bottomCenter,
-        children: [
+      SizedBox(
+        height: 220,
+        child: Stack(
+          alignment: Alignment.topCenter,
+          children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(28),
             child: SizedBox(
@@ -3813,9 +3814,15 @@ class _ProfileIdentityCard extends StatelessWidget {
               ),
             ),
           ),
-          Positioned(
-            bottom: -44,
-            child: SizedBox(
+            Positioned(
+              top: 124,
+              child: Semantics(
+                button: onChangeProfilePhoto != null,
+                label: 'Change farm profile photo',
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onChangeProfilePhoto,
+                  child: SizedBox(
               width: 96,
               height: 96,
               child: Stack(
@@ -3883,12 +3890,14 @@ class _ProfileIdentityCard extends StatelessWidget {
                       ),
                     ),
                 ],
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-      const SizedBox(height: 48),
       Row(
         mainAxisSize: MainAxisSize.min,
         children: [
