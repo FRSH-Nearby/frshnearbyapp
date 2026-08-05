@@ -464,6 +464,7 @@ class _AuthScreenState extends State<AuthScreen>
     if (business != null) {
       _displayNameController.text =
           business['publicDisplayName'] as String? ?? '';
+      _introController.text = business['description'] as String? ?? '';
       _businessNameController.text =
           business['legalBusinessName'] as String? ?? '';
       _farmNameController.text = business['farmName'] as String? ?? '';
@@ -641,6 +642,8 @@ class _AuthScreenState extends State<AuthScreen>
         final sellerLocation = location!;
         seller = {
           'publicDisplayName': _displayNameController.text.trim(),
+          if (_introController.text.trim().isNotEmpty)
+            'description': _introController.text.trim(),
           'legalBusinessName': _businessNameController.text.trim(),
           if (_farmNameController.text.trim().isNotEmpty)
             'farmName': _farmNameController.text.trim(),
@@ -981,6 +984,8 @@ class _AuthScreenState extends State<AuthScreen>
     try {
       await _backend.saveBusinessProfile({
         'publicDisplayName': _displayNameController.text.trim(),
+        if (_introController.text.trim().isNotEmpty)
+          'description': _introController.text.trim(),
         'legalBusinessName': _businessNameController.text.trim(),
         if (_farmNameController.text.trim().isNotEmpty)
           'farmName': _farmNameController.text.trim(),
@@ -1026,6 +1031,8 @@ class _AuthScreenState extends State<AuthScreen>
       } else if (_effectiveType == _AccountType.business) {
         await _backend.saveBusinessProfile({
           'publicDisplayName': _displayNameController.text.trim(),
+          if (_introController.text.trim().isNotEmpty)
+            'description': _introController.text.trim(),
           'legalBusinessName': _businessNameController.text.trim(),
           if (_farmNameController.text.trim().isNotEmpty)
             'farmName': _farmNameController.text.trim(),
@@ -1043,6 +1050,110 @@ class _AuthScreenState extends State<AuthScreen>
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Location updated.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) _showAuthError(_serverMessage(error));
+    } finally {
+      if (mounted) setState(() => _authBusy = false);
+    }
+  }
+
+  Future<void> _editFarmAbout() async {
+    final nameController = TextEditingController(
+      text:
+          _farmNameController.text.trim().isNotEmpty
+              ? _farmNameController.text.trim()
+              : _displayNameController.text.trim(),
+    );
+    final aboutController = TextEditingController(
+      text: _introController.text.trim(),
+    );
+    final result = await showDialog<(String, String)>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('Edit public farm profile'),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    maxLength: 100,
+                    decoration: const InputDecoration(
+                      labelText: 'Farm profile name',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: aboutController,
+                    minLines: 4,
+                    maxLines: 7,
+                    maxLength: 600,
+                    decoration: const InputDecoration(
+                      labelText: 'About your farm',
+                      hintText:
+                          'Share your story, growing methods and what makes your farm special.',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final name = nameController.text.trim();
+                  final about = aboutController.text.trim();
+                  if (name.length < 2 || about.isEmpty) return;
+                  Navigator.pop(dialogContext, (name, about));
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+    );
+    nameController.dispose();
+    aboutController.dispose();
+    if (result == null || !mounted) return;
+    final location = _confirmedLocation;
+    if (location == null) {
+      _showAuthError('Add your farm location before editing the public profile.');
+      return;
+    }
+
+    setState(() => _authBusy = true);
+    try {
+      _displayNameController.text = result.$1;
+      _introController.text = result.$2;
+      if (_effectiveType == _AccountType.producer) {
+        await _backend.saveProducerProfile(_producerPayload(location));
+      } else {
+        _farmNameController.text = result.$1;
+        await _backend.saveBusinessProfile({
+          'publicDisplayName': result.$1,
+          'description': result.$2,
+          'legalBusinessName': _businessNameController.text.trim(),
+          'farmName': result.$1,
+          'businessId': _businessIdController.text.trim(),
+          if (_vatController.text.trim().isNotEmpty)
+            'vatNumber': _vatController.text.trim(),
+          'businessType': _businessType,
+          'businessAddress': location.formattedAddress,
+          'city': location.city,
+          'postalCode': location.postalCode,
+          'country': location.country,
+        });
+      }
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Public farm profile updated.')),
         );
       }
     } catch (error) {
@@ -1085,6 +1196,7 @@ class _AuthScreenState extends State<AuthScreen>
         onLanguageChanged: widget.onLanguageChanged,
         onOpenVerification: _openSellerVerification,
         onEditProfile: () => _goTo(3),
+        onEditFarmAbout: _editFarmAbout,
         onEditLocation: _editLocationFromSettings,
         onEditBusiness:
             _sellerType == _AccountType.business ? () => _goTo(4) : null,
@@ -1982,10 +2094,15 @@ class _DetailsPage extends StatelessWidget {
               const SizedBox(height: 12),
               TextFormField(
                 controller: introController,
-                maxLines: 2,
+                minLines: 3,
+                maxLines: 5,
+                maxLength: 600,
                 decoration: InputDecoration(
-                  labelText: localizeText(context, 'Short introduction'),
-                  hintText: localizeText(context, 'What do you make or grow?'),
+                  labelText: localizeText(context, 'About your farm'),
+                  hintText: localizeText(
+                    context,
+                    'Tell customers your story and what makes your farm special.',
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -2398,6 +2515,7 @@ class _MainAppShell extends StatefulWidget {
     required this.onLanguageChanged,
     required this.onOpenVerification,
     required this.onEditProfile,
+    required this.onEditFarmAbout,
     required this.onEditLocation,
     required this.onEditBusiness,
     required this.onSignOut,
@@ -2422,6 +2540,7 @@ class _MainAppShell extends StatefulWidget {
   final ValueChanged<String> onLanguageChanged;
   final VoidCallback onOpenVerification;
   final VoidCallback onEditProfile;
+  final VoidCallback onEditFarmAbout;
   final VoidCallback onEditLocation;
   final VoidCallback? onEditBusiness;
   final VoidCallback onSignOut;
@@ -2564,10 +2683,9 @@ class _MainAppShellState extends State<_MainAppShell> {
                 followerCount: 0,
                 onChangeCoverPhoto: _changeCoverPhoto,
                 onChangeProfilePhoto: _changeFarmProfilePhoto,
-                onEditProfile: widget.onEditProfile,
+                onEditFarmAbout: widget.onEditFarmAbout,
                 onEditLocation: widget.onEditLocation,
                 onOpenSettings: _openSettings,
-                onEditBusiness: widget.onEditBusiness,
                 onSignOut: widget.onSignOut,
               ),
             ];
@@ -3339,10 +3457,9 @@ class _RevampedProfilePage extends StatelessWidget {
     required this.followerCount,
     required this.onChangeCoverPhoto,
     required this.onChangeProfilePhoto,
-    required this.onEditProfile,
+    required this.onEditFarmAbout,
     required this.onEditLocation,
     required this.onOpenSettings,
-    required this.onEditBusiness,
     required this.onSignOut,
   });
 
@@ -3360,10 +3477,9 @@ class _RevampedProfilePage extends StatelessWidget {
   final int followerCount;
   final VoidCallback onChangeCoverPhoto;
   final VoidCallback onChangeProfilePhoto;
-  final VoidCallback onEditProfile;
+  final VoidCallback onEditFarmAbout;
   final VoidCallback onEditLocation;
   final VoidCallback onOpenSettings;
-  final VoidCallback? onEditBusiness;
   final VoidCallback onSignOut;
 
   bool get _isSeller => type != _AccountType.consumer;
@@ -3452,7 +3568,7 @@ class _RevampedProfilePage extends StatelessWidget {
               else
                 'Add a short introduction about what you grow or make.',
             ],
-            onEdit: onEditBusiness ?? onEditProfile,
+            onEdit: onEditFarmAbout,
           ),
           const SizedBox(height: 12),
           _ProfileSection(
@@ -3473,7 +3589,7 @@ class _RevampedProfilePage extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
-            onPressed: onEditBusiness ?? onEditProfile,
+            onPressed: onEditFarmAbout,
             icon: const Icon(Icons.edit_outlined),
             label: const Text('Edit public farm profile'),
             style: FilledButton.styleFrom(
