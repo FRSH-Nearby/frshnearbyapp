@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:country_picker/country_picker.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1000,6 +1001,56 @@ class _AuthScreenState extends State<AuthScreen>
     }
   }
 
+  Future<void> _editLocationFromSettings() async {
+    final location = await showModalBottomSheet<ConfirmedLocation>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder:
+          (_) => LocationSheet(
+            isBusiness: _effectiveType == _AccountType.business,
+          ),
+    );
+    if (location == null || !mounted) return;
+
+    setState(() => _authBusy = true);
+    try {
+      await _backend.confirmLocation(location);
+      _confirmedLocation = location;
+      _businessAddressController.text = location.formattedAddress;
+      _businessCityController.text = location.city;
+      _businessPostalController.text = location.postalCode;
+      if (_effectiveType == _AccountType.producer) {
+        await _backend.saveProducerProfile(_producerPayload(location));
+      } else if (_effectiveType == _AccountType.business) {
+        await _backend.saveBusinessProfile({
+          'publicDisplayName': _displayNameController.text.trim(),
+          'legalBusinessName': _businessNameController.text.trim(),
+          if (_farmNameController.text.trim().isNotEmpty)
+            'farmName': _farmNameController.text.trim(),
+          'businessId': _businessIdController.text.trim(),
+          if (_vatController.text.trim().isNotEmpty)
+            'vatNumber': _vatController.text.trim(),
+          'businessType': _businessType,
+          'businessAddress': location.formattedAddress,
+          'city': location.city,
+          'postalCode': location.postalCode,
+          'country': location.country,
+        });
+      }
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location updated.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) _showAuthError(_serverMessage(error));
+    } finally {
+      if (mounted) setState(() => _authBusy = false);
+    }
+  }
+
   String _isoDate(String value) {
     final p = value.split('/');
     return p.length == 3 ? '${p[2]}-${p[1]}-${p[0]}' : value;
@@ -1030,6 +1081,7 @@ class _AuthScreenState extends State<AuthScreen>
         onLanguageChanged: widget.onLanguageChanged,
         onOpenVerification: _openSellerVerification,
         onEditProfile: () => _goTo(3),
+        onEditLocation: _editLocationFromSettings,
         onEditBusiness:
             _sellerType == _AccountType.business ? () => _goTo(4) : null,
         onSignOut: _signOutToWelcome,
@@ -2339,6 +2391,7 @@ class _MainAppShell extends StatefulWidget {
     required this.onLanguageChanged,
     required this.onOpenVerification,
     required this.onEditProfile,
+    required this.onEditLocation,
     required this.onEditBusiness,
     required this.onSignOut,
   });
@@ -2359,6 +2412,7 @@ class _MainAppShell extends StatefulWidget {
   final ValueChanged<String> onLanguageChanged;
   final VoidCallback onOpenVerification;
   final VoidCallback onEditProfile;
+  final VoidCallback onEditLocation;
   final VoidCallback? onEditBusiness;
   final VoidCallback onSignOut;
 
@@ -2370,6 +2424,7 @@ class _MainAppShellState extends State<_MainAppShell> {
   int _index = 0;
   final _preferences = AppPreferencesStore();
   late _AccountType _activeType = widget.type;
+  Uint8List? _coverPhotoBytes;
 
   @override
   void initState() {
@@ -2418,9 +2473,23 @@ class _MainAppShellState extends State<_MainAppShell> {
               canSwitchAccount:
                   widget.isConsumer && widget.type != _AccountType.consumer,
               onAccountTypeChanged: _setAccountType,
+              onEditPersonalDetails: widget.onEditProfile,
+              onEditFarmProfile: widget.onEditBusiness ?? widget.onEditProfile,
+              onEditLocation: widget.onEditLocation,
             ),
       ),
     );
+  }
+
+  Future<void> _changeCoverPhoto() async {
+    final photo = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 84,
+      maxWidth: 1800,
+    );
+    if (photo == null) return;
+    final bytes = await photo.readAsBytes();
+    if (mounted) setState(() => _coverPhotoBytes = bytes);
   }
 
   @override
@@ -2468,6 +2537,9 @@ class _MainAppShellState extends State<_MainAppShell> {
                 businessName: widget.businessName,
                 location: widget.location,
                 verificationStatus: widget.verificationStatus,
+                coverPhotoBytes: _coverPhotoBytes,
+                followerCount: 0,
+                onChangeCoverPhoto: _changeCoverPhoto,
                 onEditProfile: widget.onEditProfile,
                 onOpenSettings: _openSettings,
                 onEditBusiness: widget.onEditBusiness,
@@ -2563,14 +2635,83 @@ class _MainAppShellState extends State<_MainAppShell> {
   }
 }
 
-class _ConsumerDashboardPage extends StatelessWidget {
+class _ConsumerDashboardPage extends StatefulWidget {
   const _ConsumerDashboardPage({required this.fullName});
   final String fullName;
 
   @override
+  State<_ConsumerDashboardPage> createState() =>
+      _ConsumerDashboardPageState();
+}
+
+class _ConsumerDashboardPageState extends State<_ConsumerDashboardPage> {
+  static const _farms = [
+    _FeaturedFarm(
+      id: 'green-meadow',
+      name: 'Green Meadow Farm',
+      location: 'Espoo, Finland',
+      description: 'Seasonal vegetables, herbs and free-range eggs.',
+      image: 'assets/images/role_producer.jpg',
+      followerCount: 28,
+    ),
+    _FeaturedFarm(
+      id: 'sunrise-bakery',
+      name: 'Sunrise Farm Bakery',
+      location: 'Helsinki, Finland',
+      description: 'Small-batch sourdough and locally milled grains.',
+      image: 'assets/images/role_business.jpg',
+      followerCount: 41,
+    ),
+  ];
+
+  final _preferences = AppPreferencesStore();
+  Set<String> _followedFarmIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFollowedFarms();
+  }
+
+  Future<void> _loadFollowedFarms() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final followed = await _preferences.followedFarms(uid);
+    if (mounted) setState(() => _followedFarmIds = followed);
+  }
+
+  Future<void> _toggleFollow(_FeaturedFarm farm) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final followed = !_followedFarmIds.contains(farm.id);
+    setState(() {
+      followed
+          ? _followedFarmIds.add(farm.id)
+          : _followedFarmIds.remove(farm.id);
+    });
+    await _preferences.setFarmFollowed(uid, farm.id, followed: followed);
+  }
+
+  Future<void> _openFarm(_FeaturedFarm farm) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder:
+            (_) => _PublicFarmProfilePage(
+              farm: farm,
+              initiallyFollowed: _followedFarmIds.contains(farm.id),
+              onToggleFollow: () => _toggleFollow(farm),
+            ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     final firstName =
-        fullName.trim().isEmpty ? 'there' : fullName.trim().split(' ').first;
+        widget.fullName.trim().isEmpty
+            ? 'there'
+            : widget.fullName.trim().split(' ').first;
     return ColoredBox(
       color: const Color(0xFFFFFAF0),
       child: SafeArea(
@@ -2640,17 +2781,209 @@ class _ConsumerDashboardPage extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 26),
-            const _EmptyDashboardCard(
-              icon: Icons.storefront_outlined,
-              title: 'Nearby sellers',
-              body:
-                  'Local sellers and their products will appear here as the marketplace opens.',
+            Text('Nearby farmers', style: _title),
+            const SizedBox(height: 12),
+            ..._farms.map(
+              (farm) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _FarmPreviewCard(
+                  farm: farm,
+                  followed: _followedFarmIds.contains(farm.id),
+                  onTap: () => _openFarm(farm),
+                  onFollow: () => _toggleFollow(farm),
+                ),
+              ),
             ),
           ],
         ),
       ),
     );
   }
+}
+
+class _FeaturedFarm {
+  const _FeaturedFarm({
+    required this.id,
+    required this.name,
+    required this.location,
+    required this.description,
+    required this.image,
+    required this.followerCount,
+  });
+
+  final String id;
+  final String name;
+  final String location;
+  final String description;
+  final String image;
+  final int followerCount;
+}
+
+class _FarmPreviewCard extends StatelessWidget {
+  const _FarmPreviewCard({
+    required this.farm,
+    required this.followed,
+    required this.onTap,
+    required this.onFollow,
+  });
+
+  final _FeaturedFarm farm;
+  final bool followed;
+  final VoidCallback onTap;
+  final VoidCallback onFollow;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(22),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.asset(
+                farm.image,
+                width: 84,
+                height: 84,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    farm.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    farm.location,
+                    style: const TextStyle(color: _muted, fontSize: 12.5),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${farm.followerCount + (followed ? 1 : 0)} followers',
+                    style: const TextStyle(
+                      color: _green,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: followed ? 'Unfollow' : 'Follow',
+              onPressed: onFollow,
+              icon: Icon(
+                followed ? Icons.favorite_rounded : Icons.favorite_border,
+                color: followed ? _green : _muted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _PublicFarmProfilePage extends StatefulWidget {
+  const _PublicFarmProfilePage({
+    required this.farm,
+    required this.initiallyFollowed,
+    required this.onToggleFollow,
+  });
+
+  final _FeaturedFarm farm;
+  final bool initiallyFollowed;
+  final Future<void> Function() onToggleFollow;
+
+  @override
+  State<_PublicFarmProfilePage> createState() =>
+      _PublicFarmProfilePageState();
+}
+
+class _PublicFarmProfilePageState extends State<_PublicFarmProfilePage> {
+  late bool _followed = widget.initiallyFollowed;
+  bool _busy = false;
+
+  Future<void> _toggleFollow() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    await widget.onToggleFollow();
+    if (mounted) {
+      setState(() {
+        _followed = !_followed;
+        _busy = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: _cream,
+    appBar: AppBar(
+      backgroundColor: _cream,
+      surfaceTintColor: Colors.transparent,
+      title: const Text('Farm profile'),
+    ),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: Image.asset(
+            widget.farm.image,
+            height: 220,
+            width: double.infinity,
+            fit: BoxFit.cover,
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          widget.farm.name,
+          style: GoogleFonts.fraunces(
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            const Icon(Icons.location_on_outlined, size: 18, color: _muted),
+            const SizedBox(width: 5),
+            Text(widget.farm.location, style: const TextStyle(color: _muted)),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Text(widget.farm.description, style: const TextStyle(height: 1.5)),
+        const SizedBox(height: 18),
+        Text(
+          '${widget.farm.followerCount + (_followed ? 1 : 0)} followers',
+          style: const TextStyle(fontWeight: FontWeight.w700, color: _green),
+        ),
+        const SizedBox(height: 14),
+        FilledButton.icon(
+          onPressed: _busy ? null : _toggleFollow,
+          icon: Icon(
+            _followed ? Icons.check_rounded : Icons.add_rounded,
+          ),
+          label: Text(_followed ? 'Following' : 'Follow farm'),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 15),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _SellerDashboardPage extends StatelessWidget {
@@ -3024,6 +3357,9 @@ class _RevampedProfilePage extends StatelessWidget {
     required this.businessName,
     required this.location,
     required this.verificationStatus,
+    required this.coverPhotoBytes,
+    required this.followerCount,
+    required this.onChangeCoverPhoto,
     required this.onEditProfile,
     required this.onOpenSettings,
     required this.onEditBusiness,
@@ -3040,6 +3376,9 @@ class _RevampedProfilePage extends StatelessWidget {
   final String businessName;
   final ConfirmedLocation? location;
   final String verificationStatus;
+  final Uint8List? coverPhotoBytes;
+  final int followerCount;
+  final VoidCallback onChangeCoverPhoto;
   final VoidCallback onEditProfile;
   final VoidCallback onOpenSettings;
   final VoidCallback? onEditBusiness;
@@ -3112,6 +3451,7 @@ class _RevampedProfilePage extends StatelessWidget {
           const SizedBox(height: 6),
           _ProfileIdentityCard(
             image: _heroImage,
+            coverPhotoBytes: coverPhotoBytes,
             photoUrl: photoUrl,
             initialsSource: fullName,
             heading: _profileDisplayName,
@@ -3121,6 +3461,8 @@ class _RevampedProfilePage extends StatelessWidget {
                     ? 'Consumer + $_accountLabel'
                     : _accountLabel,
             verified: _isSeller && verificationStatus == 'VERIFIED',
+            followerCount: _isSeller ? followerCount : null,
+            onChangeCoverPhoto: _isSeller ? onChangeCoverPhoto : null,
           ),
           const SizedBox(height: 20),
           _ProfileSection(
@@ -3167,21 +3509,27 @@ class _RevampedProfilePage extends StatelessWidget {
 class _ProfileIdentityCard extends StatelessWidget {
   const _ProfileIdentityCard({
     required this.image,
+    this.coverPhotoBytes,
     required this.photoUrl,
     required this.initialsSource,
     required this.heading,
     required this.badgeIcon,
     required this.badgeLabel,
     this.verified = false,
+    this.followerCount,
+    this.onChangeCoverPhoto,
   });
 
   final String image;
+  final Uint8List? coverPhotoBytes;
   final String? photoUrl;
   final String initialsSource;
   final String heading;
   final IconData badgeIcon;
   final String badgeLabel;
   final bool verified;
+  final int? followerCount;
+  final VoidCallback? onChangeCoverPhoto;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -3198,7 +3546,10 @@ class _ProfileIdentityCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Image.asset(image, fit: BoxFit.cover),
+                  if (coverPhotoBytes != null)
+                    Image.memory(coverPhotoBytes!, fit: BoxFit.cover)
+                  else
+                    Image.asset(image, fit: BoxFit.cover),
                   const DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -3209,6 +3560,21 @@ class _ProfileIdentityCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (onChangeCoverPhoto != null)
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: Material(
+                        color: const Color(0xD9FFFFFF),
+                        shape: const CircleBorder(),
+                        child: IconButton(
+                          tooltip: 'Change cover photo',
+                          onPressed: onChangeCoverPhoto,
+                          icon: const Icon(Icons.photo_camera_outlined),
+                          color: _deepGreen,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -3281,6 +3647,17 @@ class _ProfileIdentityCard extends StatelessWidget {
         ],
       ),
       const SizedBox(height: 8),
+      if (followerCount != null) ...[
+        Text(
+          '$followerCount ${followerCount == 1 ? 'follower' : 'followers'}',
+          style: const TextStyle(
+            color: _muted,
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -3320,6 +3697,9 @@ class _SettingsScreen extends StatefulWidget {
     required this.sellerType,
     required this.canSwitchAccount,
     required this.onAccountTypeChanged,
+    required this.onEditPersonalDetails,
+    required this.onEditFarmProfile,
+    required this.onEditLocation,
   });
 
   final String? selectedLanguageCode;
@@ -3328,6 +3708,9 @@ class _SettingsScreen extends StatefulWidget {
   final _AccountType sellerType;
   final bool canSwitchAccount;
   final Future<void> Function(_AccountType type) onAccountTypeChanged;
+  final VoidCallback onEditPersonalDetails;
+  final VoidCallback onEditFarmProfile;
+  final VoidCallback onEditLocation;
 
   @override
   State<_SettingsScreen> createState() => _SettingsScreenState();
@@ -3362,6 +3745,40 @@ class _SettingsScreenState extends State<_SettingsScreen> {
     body: ListView(
       padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
       children: [
+        if (_activeType != _AccountType.consumer) ...[
+          Text('Profile management', style: _title),
+          const SizedBox(height: 6),
+          const Text(
+            'Update the information customers see on your farm profile.',
+            style: TextStyle(color: _muted),
+          ),
+          const SizedBox(height: 14),
+          _SettingsCard(
+            children: [
+              _SettingsAction(
+                icon: Icons.person_outline_rounded,
+                title: 'Personal details',
+                subtitle: 'Name, profile photo, phone and introduction',
+                onTap: () => _openEditor(widget.onEditPersonalDetails),
+              ),
+              const Divider(height: 1),
+              _SettingsAction(
+                icon: Icons.spa_outlined,
+                title: 'Farm profile',
+                subtitle: 'Public farm and business information',
+                onTap: () => _openEditor(widget.onEditFarmProfile),
+              ),
+              const Divider(height: 1),
+              _SettingsAction(
+                icon: Icons.location_on_outlined,
+                title: 'Farm location',
+                subtitle: 'Change the location customers discover',
+                onTap: () => _openEditor(widget.onEditLocation),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+        ],
         Text('Language', style: _title),
         const SizedBox(height: 6),
         const Text(
@@ -3447,6 +3864,11 @@ class _SettingsScreenState extends State<_SettingsScreen> {
     await Future<void>.delayed(const Duration(milliseconds: 90));
     await widget.onAccountTypeChanged(type);
   }
+
+  void _openEditor(VoidCallback editor) {
+    Navigator.of(context).pop();
+    WidgetsBinding.instance.addPostFrameCallback((_) => editor());
+  }
 }
 
 class _SettingsCard extends StatelessWidget {
@@ -3462,6 +3884,29 @@ class _SettingsCard extends StatelessWidget {
       border: Border.all(color: _line),
     ),
     child: Column(children: children),
+  );
+}
+
+class _SettingsAction extends StatelessWidget {
+  const _SettingsAction({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    leading: Icon(icon, color: _green),
+    title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+    subtitle: Text(subtitle),
+    trailing: const Icon(Icons.chevron_right_rounded),
+    onTap: onTap,
   );
 }
 
