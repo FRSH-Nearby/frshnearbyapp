@@ -938,6 +938,7 @@ class _AuthScreenState extends State<AuthScreen>
       builder:
           (_) => LocationSheet(
             isBusiness: _effectiveType == _AccountType.business,
+            initialLocation: _confirmedLocation,
           ),
     );
     if (location == null || !mounted) return;
@@ -1008,6 +1009,7 @@ class _AuthScreenState extends State<AuthScreen>
       builder:
           (_) => LocationSheet(
             isBusiness: _effectiveType == _AccountType.business,
+            initialLocation: _confirmedLocation,
           ),
     );
     if (location == null || !mounted) return;
@@ -1070,6 +1072,7 @@ class _AuthScreenState extends State<AuthScreen>
         email: _emailController.text.trim(),
         phone: _phoneController.text.trim(),
         photoUrl: _socialPhotoUrl,
+        profilePhotoBytes: _pickedPhotoBytes,
         publicName: _displayNameController.text.trim(),
         businessName: _businessNameController.text.trim(),
         location: _confirmedLocation,
@@ -2380,6 +2383,7 @@ class _MainAppShell extends StatefulWidget {
     required this.email,
     required this.phone,
     required this.photoUrl,
+    required this.profilePhotoBytes,
     required this.publicName,
     required this.businessName,
     required this.location,
@@ -2401,6 +2405,7 @@ class _MainAppShell extends StatefulWidget {
   final String email;
   final String phone;
   final String? photoUrl;
+  final Uint8List? profilePhotoBytes;
   final String publicName;
   final String businessName;
   final ConfirmedLocation? location;
@@ -2527,11 +2532,11 @@ class _MainAppShellState extends State<_MainAppShell> {
               ),
               _RevampedProfilePage(
                 type: _activeType,
-                isConsumer: widget.isConsumer,
                 fullName: widget.fullName,
                 email: widget.email,
                 phone: widget.phone,
                 photoUrl: widget.photoUrl,
+                profilePhotoBytes: widget.profilePhotoBytes,
                 publicName: widget.publicName,
                 businessName: widget.businessName,
                 location: widget.location,
@@ -3297,11 +3302,11 @@ class _FutureTab extends StatelessWidget {
 class _RevampedProfilePage extends StatelessWidget {
   const _RevampedProfilePage({
     required this.type,
-    required this.isConsumer,
     required this.fullName,
     required this.email,
     required this.phone,
     required this.photoUrl,
+    required this.profilePhotoBytes,
     required this.publicName,
     required this.businessName,
     required this.location,
@@ -3316,11 +3321,11 @@ class _RevampedProfilePage extends StatelessWidget {
   });
 
   final _AccountType type;
-  final bool isConsumer;
   final String fullName;
   final String email;
   final String phone;
   final String? photoUrl;
+  final Uint8List? profilePhotoBytes;
   final String publicName;
   final String businessName;
   final ConfirmedLocation? location;
@@ -3402,16 +3407,15 @@ class _RevampedProfilePage extends StatelessWidget {
             image: _heroImage,
             coverPhotoBytes: coverPhotoBytes,
             photoUrl: photoUrl,
+            profilePhotoBytes: profilePhotoBytes,
             initialsSource: fullName,
             heading: _profileDisplayName,
             badgeIcon: _badgeIcon,
-            badgeLabel:
-                isConsumer && _isSeller
-                    ? 'Consumer + $_accountLabel'
-                    : _accountLabel,
+            badgeLabel: _accountLabel,
             verified: _isSeller && verificationStatus == 'VERIFIED',
             followerCount: _isSeller ? followerCount : null,
             onChangeCoverPhoto: _isSeller ? onChangeCoverPhoto : null,
+            onChangeProfilePhoto: _isSeller ? onEditProfile : null,
           ),
           const SizedBox(height: 20),
           _ProfileSection(
@@ -3460,6 +3464,7 @@ class _ProfileIdentityCard extends StatelessWidget {
     required this.image,
     this.coverPhotoBytes,
     required this.photoUrl,
+    this.profilePhotoBytes,
     required this.initialsSource,
     required this.heading,
     required this.badgeIcon,
@@ -3467,11 +3472,13 @@ class _ProfileIdentityCard extends StatelessWidget {
     this.verified = false,
     this.followerCount,
     this.onChangeCoverPhoto,
+    this.onChangeProfilePhoto,
   });
 
   final String image;
   final Uint8List? coverPhotoBytes;
   final String? photoUrl;
+  final Uint8List? profilePhotoBytes;
   final String initialsSource;
   final String heading;
   final IconData badgeIcon;
@@ -3479,6 +3486,13 @@ class _ProfileIdentityCard extends StatelessWidget {
   final bool verified;
   final int? followerCount;
   final VoidCallback? onChangeCoverPhoto;
+  final VoidCallback? onChangeProfilePhoto;
+
+  ImageProvider<Object>? get _avatarImage {
+    if (profilePhotoBytes != null) return MemoryImage(profilePhotoBytes!);
+    if (photoUrl?.isNotEmpty == true) return NetworkImage(photoUrl!);
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) => Column(
@@ -3547,12 +3561,9 @@ class _ProfileIdentityCard extends StatelessWidget {
               ),
               child: CircleAvatar(
                 backgroundColor: _mist,
-                backgroundImage:
-                    photoUrl?.isNotEmpty == true
-                        ? NetworkImage(photoUrl!)
-                        : null,
+                backgroundImage: _avatarImage,
                 child:
-                    photoUrl?.isNotEmpty == true
+                    profilePhotoBytes != null || photoUrl?.isNotEmpty == true
                         ? null
                         : Text(
                           initialsSource.isEmpty
@@ -3567,6 +3578,29 @@ class _ProfileIdentityCard extends StatelessWidget {
               ),
             ),
           ),
+          if (onChangeProfilePhoto != null)
+            Positioned(
+              bottom: -40,
+              right: MediaQuery.sizeOf(context).width / 2 - 68,
+              child: Material(
+                color: _green,
+                shape: const CircleBorder(),
+                child: IconButton(
+                  tooltip: 'Edit profile photo',
+                  onPressed: onChangeProfilePhoto,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 34,
+                    height: 34,
+                  ),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(
+                    Icons.photo_camera_outlined,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
       const SizedBox(height: 48),

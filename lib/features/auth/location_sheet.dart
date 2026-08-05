@@ -3,13 +3,20 @@ import 'package:flutter/material.dart' hide Text;
 import 'package:dio/dio.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 import 'backend_service.dart';
 import '../../l10n/localized_text.dart';
 
 class LocationSheet extends StatefulWidget {
-  const LocationSheet({required this.isBusiness, super.key});
+  const LocationSheet({
+    required this.isBusiness,
+    this.initialLocation,
+    super.key,
+  });
   final bool isBusiness;
+  final ConfirmedLocation? initialLocation;
   @override
   State<LocationSheet> createState() => _LocationSheetState();
 }
@@ -121,13 +128,32 @@ class _LocationSheetState extends State<LocationSheet> {
   final _city = TextEditingController();
   final _postal = TextEditingController();
   final _country = TextEditingController();
+  final _mapController = MapController();
   bool _busy = false;
   double? _lat;
   double? _lng;
   String? _detectedAddressSignature;
 
+  LatLng get _mapPoint => LatLng(_lat ?? 60.1699, _lng ?? 24.9384);
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialLocation;
+    if (initial == null) return;
+    _address.text = initial.addressLine;
+    _addressUnit.text = initial.addressUnit ?? '';
+    _city.text = initial.city;
+    _postal.text = initial.postalCode;
+    _country.text = initial.country;
+    _lat = initial.latitude;
+    _lng = initial.longitude;
+    _detectedAddressSignature = _addressSignature;
+  }
+
   @override
   void dispose() {
+    _mapController.dispose();
     _address.dispose();
     _addressUnit.dispose();
     _city.dispose();
@@ -178,6 +204,7 @@ class _LocationSheetState extends State<LocationSheet> {
           _detectedAddressSignature = _addressSignature;
         }
       }
+      if (mounted) _mapController.move(_mapPoint, 16);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -238,6 +265,45 @@ class _LocationSheetState extends State<LocationSheet> {
       );
     }
     _detectedAddressSignature = _addressSignature;
+  }
+
+  Future<void> _selectMapPoint(LatLng point) async {
+    setState(() {
+      _lat = point.latitude;
+      _lng = point.longitude;
+      _busy = true;
+    });
+    try {
+      if (kIsWeb) {
+        await _reverseGeocodeWeb();
+      } else {
+        final places = await placemarkFromCoordinates(_lat!, _lng!);
+        if (places.isNotEmpty) {
+          final place = places.first;
+          _address.text = [
+            place.street,
+            if ((place.street ?? '').isEmpty) place.name,
+            place.subLocality,
+          ].where((value) => value?.trim().isNotEmpty == true).join(', ');
+          _city.text = place.locality ?? place.administrativeArea ?? '';
+          _postal.text = place.postalCode ?? '';
+          _country.text = place.country ?? '';
+          _detectedAddressSignature = _addressSignature;
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Marker selected. Please complete the address fields manually.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   String get _addressSignature => [
@@ -406,6 +472,61 @@ class _LocationSheetState extends State<LocationSheet> {
               const SizedBox(height: 8),
               const Text(
                 'Optional shortcut only. Edit the address below if you are not currently at the seller location.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF647267),
+                  fontSize: 11,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                height: 220,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFD9E6D1)),
+                ),
+                child: FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: _mapPoint,
+                    initialZoom: _lat == null ? 5.5 : 16,
+                    minZoom: 3,
+                    maxZoom: 19,
+                    onTap: (_, point) => _selectMapPoint(point),
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.frshnearby.frshnearby',
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: _mapPoint,
+                          width: 52,
+                          height: 52,
+                          child: const Icon(
+                            Icons.location_pin,
+                            color: Color(0xFF2F6B45),
+                            size: 48,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const RichAttributionWidget(
+                      attributions: [
+                        TextSourceAttribution('OpenStreetMap contributors'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Zoom in and tap the exact farm location. The marker and address fields will update.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Color(0xFF647267),

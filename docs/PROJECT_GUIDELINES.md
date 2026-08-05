@@ -87,6 +87,7 @@ Installed and approved (see `pubspec.yaml`):
 | `google_fonts` | Nunito Sans — the brand font per DESIGN_GUIDELINES.md §2 |
 | `flutter_svg` | Render lightweight brand illustrations and vector assets |
 | `cached_network_image` | Produce/farm photos with caching + `mist`-colored placeholders (DESIGN_GUIDELINES.md §7) |
+| `flutter_map` + `latlong2` | OpenStreetMap-based farm location selection and latitude/longitude coordinates |
 | `cupertino_icons` | iOS-style icons |
 | `flutter_lints` (dev) | Lint rules — keep `dart analyze` at zero issues |
 
