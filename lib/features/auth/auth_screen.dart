@@ -84,6 +84,7 @@ class _AuthScreenState extends State<AuthScreen>
   Uint8List? _pickedPhotoBytes;
   ConfirmedLocation? _confirmedLocation;
   String? _businessType;
+  String? _farmId;
   String _verificationStatus = 'NOT_REQUIRED';
   String? _verificationRequestTitle;
   String? _verificationMessage;
@@ -457,11 +458,13 @@ class _AuthScreenState extends State<AuthScreen>
     _isConsumer = profile.roles.contains('CONSUMER');
     final producer = profile.producerProfile;
     if (producer != null) {
+      _farmId = producer['id'] as String?;
       _displayNameController.text = producer['publicName'] as String? ?? '';
       _introController.text = producer['description'] as String? ?? '';
     }
     final business = profile.businessProfile;
     if (business != null) {
+      _farmId = business['id'] as String?;
       _displayNameController.text =
           business['publicDisplayName'] as String? ?? '';
       _introController.text = business['description'] as String? ?? '';
@@ -1150,6 +1153,7 @@ class _AuthScreenState extends State<AuthScreen>
           'country': location.country,
         });
       }
+      await _refreshBackendProfile();
       if (mounted) {
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1188,6 +1192,7 @@ class _AuthScreenState extends State<AuthScreen>
         businessName: _businessNameController.text.trim(),
         farmName: _farmNameController.text.trim(),
         farmDescription: _introController.text.trim(),
+        farmId: _farmId,
         location: _confirmedLocation,
         verificationStatus: _verificationStatus,
         verificationRequestTitle: _verificationRequestTitle,
@@ -2507,6 +2512,7 @@ class _MainAppShell extends StatefulWidget {
     required this.businessName,
     required this.farmName,
     required this.farmDescription,
+    required this.farmId,
     required this.location,
     required this.verificationStatus,
     required this.verificationRequestTitle,
@@ -2532,6 +2538,7 @@ class _MainAppShell extends StatefulWidget {
   final String businessName;
   final String farmName;
   final String farmDescription;
+  final String? farmId;
   final ConfirmedLocation? location;
   final String verificationStatus;
   final String? verificationRequestTitle;
@@ -2677,6 +2684,7 @@ class _MainAppShellState extends State<_MainAppShell> {
                 businessName: widget.businessName,
                 farmName: widget.farmName,
                 farmDescription: widget.farmDescription,
+                farmId: widget.farmId,
                 location: widget.location,
                 verificationStatus: widget.verificationStatus,
                 coverPhotoBytes: _coverPhotoBytes,
@@ -3451,6 +3459,7 @@ class _RevampedProfilePage extends StatelessWidget {
     required this.businessName,
     required this.farmName,
     required this.farmDescription,
+    required this.farmId,
     required this.location,
     required this.verificationStatus,
     required this.coverPhotoBytes,
@@ -3471,6 +3480,7 @@ class _RevampedProfilePage extends StatelessWidget {
   final String businessName;
   final String farmName;
   final String farmDescription;
+  final String? farmId;
   final ConfirmedLocation? location;
   final String verificationStatus;
   final Uint8List? coverPhotoBytes;
@@ -3559,15 +3569,9 @@ class _RevampedProfilePage extends StatelessWidget {
             onChangeProfilePhoto: _isSeller ? onChangeProfilePhoto : null,
           ),
           const SizedBox(height: 20),
-          _ProfileSection(
-            icon: Icons.spa_outlined,
-            title: 'About the farm',
-            lines: [
-              if (farmDescription.isNotEmpty)
-                farmDescription
-              else
-                'Add a short introduction about what you grow or make.',
-            ],
+          _FarmStoryCard(
+            description: farmDescription,
+            farmId: farmId,
             onEdit: onEditFarmAbout,
           ),
           const SizedBox(height: 12),
@@ -4654,6 +4658,155 @@ class _ProfilePage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _FarmStoryCard extends StatelessWidget {
+  const _FarmStoryCard({
+    required this.description,
+    required this.farmId,
+    required this.onEdit,
+  });
+
+  final String description;
+  final String? farmId;
+  final VoidCallback onEdit;
+
+  String get _shortFarmId {
+    final id = farmId;
+    if (id == null || id.isEmpty) return '';
+    return id.length <= 10 ? id : id.substring(id.length - 10).toUpperCase();
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF1C5137), Color(0xFF347652)],
+      ),
+      borderRadius: BorderRadius.circular(24),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x24133C29),
+          blurRadius: 22,
+          offset: Offset(0, 10),
+        ),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .14),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.auto_stories_outlined,
+                color: Colors.white,
+                size: 21,
+              ),
+            ),
+            const SizedBox(width: 11),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'OUR STORY',
+                    style: TextStyle(
+                      color: Color(0xFFCDE4D4),
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  Text(
+                    'About the farm',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Edit farm story',
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined, color: Colors.white),
+            ),
+          ],
+        ),
+        const SizedBox(height: 15),
+        Text(
+          description.isNotEmpty
+              ? description
+              : 'Tell customers what you grow or make, how you work, and what makes your farm worth following.',
+          style: TextStyle(
+            color:
+                description.isNotEmpty
+                    ? Colors.white
+                    : Colors.white.withValues(alpha: .72),
+            height: 1.5,
+            fontSize: 14,
+          ),
+        ),
+        if (_shortFarmId.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: () async {
+              await Clipboard.setData(ClipboardData(text: farmId!));
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Farm ID copied.')),
+                );
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .12),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.fingerprint_rounded,
+                    color: Color(0xFFCDE4D4),
+                    size: 15,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Farm ID  $_shortFarmId',
+                    style: const TextStyle(
+                      color: Color(0xFFE7F3EA),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Icon(
+                    Icons.copy_rounded,
+                    color: Color(0xFFCDE4D4),
+                    size: 13,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    ),
+  );
 }
 
 class _ProfileSection extends StatelessWidget {
