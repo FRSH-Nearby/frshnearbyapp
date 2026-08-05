@@ -28,6 +28,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
   late Future<List<_NearbySale>> _sales;
   bool _usingLiveLocation = false;
   bool _locating = false;
+  bool _showFarmTile = false;
   String? _selectedId;
   List<_NearbySale> _selectedFarmSales = const [];
 
@@ -133,10 +134,27 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
     setState(() {
       _selectedId = sales.first.id;
       _selectedFarmSales = sales;
+      _showFarmTile = true;
     });
     _mapController.move(
       LatLng(sales.first.latitude, sales.first.longitude),
       15.5,
+    );
+  }
+
+  void _toggleFarmTile(List<_NearbySale> sales) {
+    if (_showFarmTile) {
+      setState(() => _showFarmTile = false);
+      return;
+    }
+    if (_selectedFarmSales.isNotEmpty) {
+      setState(() => _showFarmTile = true);
+      return;
+    }
+    if (sales.isEmpty) return;
+    final nearestFarmId = sales.first.farmId;
+    _openFarmSales(
+      sales.where((sale) => sale.farmId == nearestFarmId).toList(),
     );
   }
 
@@ -180,6 +198,8 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
                   onRefresh: _retry,
                   onLocate: _useCurrentLocation,
                   locating: _locating,
+                  showFarmTile: _showFarmTile,
+                  onToggleFarmTile: () => _toggleFarmTile(sales),
                 ),
               ),
             ),
@@ -191,7 +211,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
                   ),
                 ),
               ),
-            if (_selectedFarmSales.isNotEmpty)
+            if (_showFarmTile && _selectedFarmSales.isNotEmpty)
               Positioned(
                 left: 0,
                 right: 0,
@@ -276,12 +296,16 @@ class _ExploreHeader extends StatelessWidget {
     required this.onRefresh,
     required this.onLocate,
     required this.locating,
+    required this.showFarmTile,
+    required this.onToggleFarmTile,
   });
   final String locationName;
   final int count;
   final VoidCallback onRefresh;
   final VoidCallback onLocate;
   final bool locating;
+  final bool showFarmTile;
+  final VoidCallback onToggleFarmTile;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -314,6 +338,15 @@ class _ExploreHeader extends StatelessWidget {
             ),
           ),
           IconButton(onPressed: onRefresh, icon: const Icon(Icons.refresh_rounded)),
+          IconButton(
+            tooltip: showFarmTile ? 'Hide farm tile' : 'Show farm tile',
+            onPressed: onToggleFarmTile,
+            icon: Icon(
+              showFarmTile
+                  ? Icons.map_rounded
+                  : Icons.view_carousel_outlined,
+            ),
+          ),
         ],
       ),
     ),
@@ -405,6 +438,46 @@ class _FarmMarker extends StatelessWidget {
           Stack(
             clipBehavior: Clip.none,
             children: [
+              if (sales.isNotEmpty)
+                Positioned(
+                  left: -22,
+                  bottom: 2,
+                  child: Container(
+                    width: 35,
+                    height: 35,
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(color: Colors.black26, blurRadius: 6),
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: Image.memory(sales.first.imageBytes, fit: BoxFit.cover),
+                    ),
+                  ),
+                ),
+              if (sales.length > 1)
+                Positioned(
+                  right: -22,
+                  bottom: 2,
+                  child: Container(
+                    width: 35,
+                    height: 35,
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(color: Colors.black26, blurRadius: 6),
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: Image.memory(sales[1].imageBytes, fit: BoxFit.cover),
+                    ),
+                  ),
+                ),
               AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
                 width: selected ? 60 : 54,
