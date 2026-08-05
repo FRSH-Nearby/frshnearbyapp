@@ -3591,15 +3591,6 @@ class _RevampedProfilePage extends StatelessWidget {
             ],
             onEdit: onEditLocation,
           ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: onEditFarmAbout,
-            icon: const Icon(Icons.edit_outlined),
-            label: const Text('Edit public farm profile'),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 15),
-            ),
-          ),
           const SizedBox(height: 18),
           OutlinedButton.icon(
             onPressed: onSignOut,
