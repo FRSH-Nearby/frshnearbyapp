@@ -3692,64 +3692,78 @@ class _ProfileIdentityCard extends StatelessWidget {
             ),
           ),
           Positioned(
-            bottom: -40,
-            child: Container(
-              width: 88,
-              height: 88,
-              padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Color(0x1F0D2A1B),
-                    blurRadius: 18,
-                    offset: Offset(0, 8),
+            bottom: -44,
+            child: SizedBox(
+              width: 96,
+              height: 96,
+              child: Stack(
+                children: [
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    child: Container(
+                      width: 88,
+                      height: 88,
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0x1F0D2A1B),
+                            blurRadius: 18,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: CircleAvatar(
+                        backgroundColor: _mist,
+                        backgroundImage: _avatarImage,
+                        child:
+                            profilePhotoBytes != null ||
+                                    photoUrl?.isNotEmpty == true
+                                ? null
+                                : Text(
+                                  initialsSource.isEmpty
+                                      ? 'F'
+                                      : initialsSource[0].toUpperCase(),
+                                  style: GoogleFonts.fraunces(
+                                    color: _green,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                      ),
+                    ),
                   ),
-                ],
-              ),
-              child: CircleAvatar(
-                backgroundColor: _mist,
-                backgroundImage: _avatarImage,
-                child:
-                    profilePhotoBytes != null || photoUrl?.isNotEmpty == true
-                        ? null
-                        : Text(
-                          initialsSource.isEmpty
-                              ? 'F'
-                              : initialsSource[0].toUpperCase(),
-                          style: GoogleFonts.fraunces(
-                            color: _green,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
+                  if (onChangeProfilePhoto != null)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Material(
+                        color: _green,
+                        shape: const CircleBorder(),
+                        elevation: 2,
+                        child: IconButton(
+                          tooltip: 'Change farm profile photo',
+                          onPressed: onChangeProfilePhoto,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 34,
+                            height: 34,
+                          ),
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(
+                            Icons.photo_camera_outlined,
+                            color: Colors.white,
+                            size: 18,
                           ),
                         ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
-          if (onChangeProfilePhoto != null)
-            Positioned(
-              bottom: -40,
-              right: MediaQuery.sizeOf(context).width / 2 - 68,
-              child: Material(
-                color: _green,
-                shape: const CircleBorder(),
-                child: IconButton(
-                  tooltip: 'Edit profile photo',
-                  onPressed: onChangeProfilePhoto,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 34,
-                    height: 34,
-                  ),
-                  padding: EdgeInsets.zero,
-                  icon: const Icon(
-                    Icons.photo_camera_outlined,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
       const SizedBox(height: 48),
