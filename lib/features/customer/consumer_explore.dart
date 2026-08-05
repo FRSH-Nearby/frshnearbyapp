@@ -10,7 +10,6 @@ import 'package:latlong2/latlong.dart';
 import '../auth/backend_service.dart';
 
 const _green = Color(0xFF2F6B45);
-const _ink = Color(0xFF1B2A20);
 const _cream = Color(0xFFFBFAF5);
 
 class ConsumerExplorePage extends StatefulWidget {
