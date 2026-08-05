@@ -125,11 +125,47 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
     if (!_showList) {
       _mapController.move(LatLng(sale.latitude, sale.longitude), 15.5);
     }
+    _showSaleDetails(sale);
+  }
+
+  void _showSaleDetails(_NearbySale sale) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _SaleDetailsSheet(sale: sale),
+    );
+  }
+
+  void _openFarmSales(List<_NearbySale> sales) {
+    if (sales.length == 1) {
+      _select(sales.first);
+      return;
+    }
+    setState(() => _selectedId = sales.first.id);
+    if (!_showList) {
+      _mapController.move(
+        LatLng(sales.first.latitude, sales.first.longitude),
+        15.5,
+      );
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder:
+          (sheetContext) => _FarmSalesSheet(
+            sales: sales,
+            onSelect: (sale) {
+              Navigator.of(sheetContext).pop();
+              Future<void>.delayed(
+                const Duration(milliseconds: 180),
+                () {
+                  if (mounted) _showSaleDetails(sale);
+                },
+              );
+            },
+          ),
     );
   }
 
@@ -161,7 +197,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
                         position: _position,
                         sales: sales,
                         selectedId: _selectedId,
-                        onSelect: _select,
+                        onFarmSelect: _openFarmSales,
                       ),
             ),
             SafeArea(
@@ -202,18 +238,22 @@ class _SalesMap extends StatelessWidget {
     required this.position,
     required this.sales,
     required this.selectedId,
-    required this.onSelect,
+    required this.onFarmSelect,
   });
 
   final MapController controller;
   final LatLng position;
   final List<_NearbySale> sales;
   final String? selectedId;
-  final ValueChanged<_NearbySale> onSelect;
+  final ValueChanged<List<_NearbySale>> onFarmSelect;
 
   @override
   Widget build(BuildContext context) {
     final center = position;
+    final farms = <String, List<_NearbySale>>{};
+    for (final sale in sales) {
+      farms.putIfAbsent(sale.farmId, () => []).add(sale);
+    }
     return FlutterMap(
       mapController: controller,
       options: MapOptions(initialCenter: center, initialZoom: 12.5),
@@ -230,16 +270,19 @@ class _SalesMap extends StatelessWidget {
               height: 28,
               child: const _UserMarker(),
             ),
-            ...sales.map(
-              (sale) => Marker(
-                point: LatLng(sale.latitude, sale.longitude),
-                width: 76,
-                height: 76,
+            ...farms.values.map(
+              (farmSales) => Marker(
+                point: LatLng(
+                  farmSales.first.latitude,
+                  farmSales.first.longitude,
+                ),
+                width: 112,
+                height: 82,
                 alignment: Alignment.bottomCenter,
-                child: _SaleMarker(
-                  sale: sale,
-                  selected: sale.id == selectedId,
-                  onTap: () => onSelect(sale),
+                child: _SaleStackMarker(
+                  sales: farmSales,
+                  selected: farmSales.any((sale) => sale.id == selectedId),
+                  onTap: () => onFarmSelect(farmSales),
                 ),
               ),
             ),
@@ -373,9 +416,13 @@ class _SaleCard extends StatelessWidget {
   );
 }
 
-class _SaleMarker extends StatelessWidget {
-  const _SaleMarker({required this.sale, required this.selected, required this.onTap});
-  final _NearbySale sale;
+class _SaleStackMarker extends StatelessWidget {
+  const _SaleStackMarker({
+    required this.sales,
+    required this.selected,
+    required this.onTap,
+  });
+  final List<_NearbySale> sales;
   final bool selected;
   final VoidCallback onTap;
 
@@ -385,13 +432,63 @@ class _SaleMarker extends StatelessWidget {
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          width: selected ? 54 : 46,
-          height: selected ? 54 : 46,
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(color: selected ? _green : Colors.white, shape: BoxShape.circle, boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)]),
-          child: ClipOval(child: Image.memory(sale.imageBytes, fit: BoxFit.cover)),
+        SizedBox(
+          width: 104,
+          height: 62,
+          child: Stack(
+            alignment: Alignment.center,
+            clipBehavior: Clip.none,
+            children: [
+              for (var index = 0; index < sales.take(3).length; index++)
+                Positioned(
+                  left: 19.0 + (index * 19),
+                  top: index == 1 ? 0 : 7,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: selected ? 52 : 47,
+                    height: selected ? 52 : 47,
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: selected ? _green : Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black26, blurRadius: 8),
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: Image.memory(
+                        sales[index].imageBytes,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                ),
+              if (sales.length > 1)
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _green,
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: Text(
+                      sales.length > 3 ? '+${sales.length - 3}' : '${sales.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
         Container(width: 3, height: 10, color: _green),
       ],
@@ -405,6 +502,103 @@ class _UserMarker extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     decoration: BoxDecoration(color: Colors.blue, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5)]),
   );
+}
+
+class _FarmSalesSheet extends StatelessWidget {
+  const _FarmSalesSheet({required this.sales, required this.onSelect});
+  final List<_NearbySale> sales;
+  final ValueChanged<_NearbySale> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final farm = sales.first;
+    return FractionallySizedBox(
+      heightFactor: .78,
+      child: Material(
+        color: _cream,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: const Color(0xFFE5EFDF),
+                    backgroundImage:
+                        farm.farmProfilePhotoUrl?.isNotEmpty == true
+                            ? NetworkImage(farm.farmProfilePhotoUrl!)
+                            : null,
+                    child:
+                        farm.farmProfilePhotoUrl?.isNotEmpty == true
+                            ? null
+                            : Text(
+                              farm.farmName.characters.first.toUpperCase(),
+                              style: const TextStyle(
+                                color: _green,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          farm.farmName,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          '${sales.length} Hot Sales • ${farm.distanceKm.toStringAsFixed(1)} km away',
+                          style: const TextStyle(color: Colors.black54),
+                        ),
+                        if (farm.farmLocation.isNotEmpty)
+                          Text(
+                            farm.farmLocation,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.black54),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.all(14),
+                itemCount: sales.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 11),
+                itemBuilder:
+                    (_, index) => _SaleCard(
+                      sale: sales[index],
+                      onTap: () => onSelect(sales[index]),
+                    ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _SaleDetailsSheet extends StatelessWidget {
@@ -641,6 +835,7 @@ class _NearbySale {
   _NearbySale(this.json);
   final Map<String, dynamic> json;
   String get id => json['id'] as String;
+  String get farmId => json['farmId'] as String;
   String get title => json['originalTitle'] as String;
   String get description => json['description'] as String;
   String? get productionDetail => json['productionDetail'] as String?;
