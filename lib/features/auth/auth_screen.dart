@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:country_picker/country_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -85,6 +86,8 @@ class _AuthScreenState extends State<AuthScreen>
   ConfirmedLocation? _confirmedLocation;
   String? _businessType;
   String? _farmId;
+  String? _farmProfilePhotoUrl;
+  String? _farmCoverPhotoUrl;
   String _verificationStatus = 'NOT_REQUIRED';
   String? _verificationRequestTitle;
   String? _verificationMessage;
@@ -459,12 +462,16 @@ class _AuthScreenState extends State<AuthScreen>
     final producer = profile.producerProfile;
     if (producer != null) {
       _farmId = producer['id'] as String?;
+      _farmProfilePhotoUrl = producer['profilePhotoUrl'] as String?;
+      _farmCoverPhotoUrl = producer['coverPhotoUrl'] as String?;
       _displayNameController.text = producer['publicName'] as String? ?? '';
       _introController.text = producer['description'] as String? ?? '';
     }
     final business = profile.businessProfile;
     if (business != null) {
       _farmId = business['id'] as String?;
+      _farmProfilePhotoUrl = business['profilePhotoUrl'] as String?;
+      _farmCoverPhotoUrl = business['coverPhotoUrl'] as String?;
       _displayNameController.text =
           business['publicDisplayName'] as String? ?? '';
       _introController.text = business['description'] as String? ?? '';
@@ -1193,6 +1200,8 @@ class _AuthScreenState extends State<AuthScreen>
         farmName: _farmNameController.text.trim(),
         farmDescription: _introController.text.trim(),
         farmId: _farmId,
+        farmProfilePhotoUrl: _farmProfilePhotoUrl,
+        farmCoverPhotoUrl: _farmCoverPhotoUrl,
         location: _confirmedLocation,
         verificationStatus: _verificationStatus,
         verificationRequestTitle: _verificationRequestTitle,
@@ -2513,6 +2522,8 @@ class _MainAppShell extends StatefulWidget {
     required this.farmName,
     required this.farmDescription,
     required this.farmId,
+    required this.farmProfilePhotoUrl,
+    required this.farmCoverPhotoUrl,
     required this.location,
     required this.verificationStatus,
     required this.verificationRequestTitle,
@@ -2539,6 +2550,8 @@ class _MainAppShell extends StatefulWidget {
   final String farmName;
   final String farmDescription;
   final String? farmId;
+  final String? farmProfilePhotoUrl;
+  final String? farmCoverPhotoUrl;
   final ConfirmedLocation? location;
   final String verificationStatus;
   final String? verificationRequestTitle;
@@ -2562,11 +2575,29 @@ class _MainAppShellState extends State<_MainAppShell> {
   late _AccountType _activeType = widget.type;
   Uint8List? _coverPhotoBytes;
   Uint8List? _farmProfilePhotoBytes;
+  late String? _coverPhotoUrl;
+  late String? _farmProfilePhotoUrl;
+  final _backend = BackendService();
 
   @override
   void initState() {
     super.initState();
+    _coverPhotoUrl = widget.farmCoverPhotoUrl;
+    _farmProfilePhotoUrl = widget.farmProfilePhotoUrl;
     _loadAccountMode();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MainAppShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_coverPhotoBytes == null &&
+        oldWidget.farmCoverPhotoUrl != widget.farmCoverPhotoUrl) {
+      _coverPhotoUrl = widget.farmCoverPhotoUrl;
+    }
+    if (_farmProfilePhotoBytes == null &&
+        oldWidget.farmProfilePhotoUrl != widget.farmProfilePhotoUrl) {
+      _farmProfilePhotoUrl = widget.farmProfilePhotoUrl;
+    }
   }
 
   Future<void> _loadAccountMode() async {
@@ -2626,7 +2657,13 @@ class _MainAppShellState extends State<_MainAppShell> {
     );
     if (photo == null) return;
     final bytes = await photo.readAsBytes();
-    if (mounted) setState(() => _coverPhotoBytes = bytes);
+    if (!mounted) return;
+    setState(() => _coverPhotoBytes = bytes);
+    await _uploadFarmMedia(
+      kind: 'COVER',
+      bytes: bytes,
+      mimeType: photo.mimeType ?? _imageMimeType(photo.name),
+    );
   }
 
   Future<void> _changeFarmProfilePhoto() async {
@@ -2637,7 +2674,75 @@ class _MainAppShellState extends State<_MainAppShell> {
     );
     if (photo == null) return;
     final bytes = await photo.readAsBytes();
-    if (mounted) setState(() => _farmProfilePhotoBytes = bytes);
+    if (!mounted) return;
+    setState(() => _farmProfilePhotoBytes = bytes);
+    await _uploadFarmMedia(
+      kind: 'PROFILE',
+      bytes: bytes,
+      mimeType: photo.mimeType ?? _imageMimeType(photo.name),
+    );
+  }
+
+  String _imageMimeType(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
+  Future<void> _uploadFarmMedia({
+    required String kind,
+    required Uint8List bytes,
+    required String mimeType,
+  }) async {
+    try {
+      final uploaded = await _backend.uploadFarmMedia(
+        kind: kind,
+        mimeType: mimeType,
+        bytes: bytes,
+      );
+      if (!mounted) return;
+      try {
+        await precacheImage(CachedNetworkImageProvider(uploaded.url), context);
+      } catch (_) {
+        // The upload is already durable. A later image request can warm cache.
+      }
+      if (!mounted) return;
+      setState(() {
+        if (kind == 'COVER') {
+          _coverPhotoUrl = uploaded.url;
+          _coverPhotoBytes = null;
+        } else {
+          _farmProfilePhotoUrl = uploaded.url;
+          _farmProfilePhotoBytes = null;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            kind == 'COVER'
+                ? 'Cover photo saved.'
+                : 'Farm profile photo saved.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        if (kind == 'COVER') {
+          _coverPhotoBytes = null;
+        } else {
+          _farmProfilePhotoBytes = null;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Photo upload failed: ${error.toString().replaceFirst('Bad state: ', '')}',
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -2678,13 +2783,14 @@ class _MainAppShellState extends State<_MainAppShell> {
               _RevampedProfilePage(
                 type: _activeType,
                 fullName: widget.fullName,
-                photoUrl: null,
                 profilePhotoBytes: _farmProfilePhotoBytes,
                 publicName: widget.publicName,
                 businessName: widget.businessName,
                 farmName: widget.farmName,
                 farmDescription: widget.farmDescription,
                 farmId: widget.farmId,
+                coverPhotoUrl: _coverPhotoUrl,
+                farmProfilePhotoUrl: _farmProfilePhotoUrl,
                 location: widget.location,
                 verificationStatus: widget.verificationStatus,
                 coverPhotoBytes: _coverPhotoBytes,
@@ -3453,13 +3559,14 @@ class _RevampedProfilePage extends StatelessWidget {
   const _RevampedProfilePage({
     required this.type,
     required this.fullName,
-    required this.photoUrl,
     required this.profilePhotoBytes,
     required this.publicName,
     required this.businessName,
     required this.farmName,
     required this.farmDescription,
     required this.farmId,
+    required this.coverPhotoUrl,
+    required this.farmProfilePhotoUrl,
     required this.location,
     required this.verificationStatus,
     required this.coverPhotoBytes,
@@ -3474,13 +3581,14 @@ class _RevampedProfilePage extends StatelessWidget {
 
   final _AccountType type;
   final String fullName;
-  final String? photoUrl;
   final Uint8List? profilePhotoBytes;
   final String publicName;
   final String businessName;
   final String farmName;
   final String farmDescription;
   final String? farmId;
+  final String? coverPhotoUrl;
+  final String? farmProfilePhotoUrl;
   final ConfirmedLocation? location;
   final String verificationStatus;
   final Uint8List? coverPhotoBytes;
@@ -3556,8 +3664,9 @@ class _RevampedProfilePage extends StatelessWidget {
           const SizedBox(height: 6),
           _ProfileIdentityCard(
             image: _heroImage,
+            coverPhotoUrl: coverPhotoUrl,
             coverPhotoBytes: coverPhotoBytes,
-            photoUrl: photoUrl,
+            photoUrl: farmProfilePhotoUrl,
             profilePhotoBytes: profilePhotoBytes,
             initialsSource: _profileDisplayName,
             heading: _profileDisplayName,
@@ -3611,6 +3720,7 @@ class _RevampedProfilePage extends StatelessWidget {
 class _ProfileIdentityCard extends StatelessWidget {
   const _ProfileIdentityCard({
     required this.image,
+    this.coverPhotoUrl,
     this.coverPhotoBytes,
     required this.photoUrl,
     this.profilePhotoBytes,
@@ -3625,6 +3735,7 @@ class _ProfileIdentityCard extends StatelessWidget {
   });
 
   final String image;
+  final String? coverPhotoUrl;
   final Uint8List? coverPhotoBytes;
   final String? photoUrl;
   final Uint8List? profilePhotoBytes;
@@ -3639,7 +3750,9 @@ class _ProfileIdentityCard extends StatelessWidget {
 
   ImageProvider<Object>? get _avatarImage {
     if (profilePhotoBytes != null) return MemoryImage(profilePhotoBytes!);
-    if (photoUrl?.isNotEmpty == true) return NetworkImage(photoUrl!);
+    if (photoUrl?.isNotEmpty == true) {
+      return CachedNetworkImageProvider(photoUrl!);
+    }
     return null;
   }
 
@@ -3660,6 +3773,15 @@ class _ProfileIdentityCard extends StatelessWidget {
                 children: [
                   if (coverPhotoBytes != null)
                     Image.memory(coverPhotoBytes!, fit: BoxFit.cover)
+                  else if (coverPhotoUrl?.isNotEmpty == true)
+                    CachedNetworkImage(
+                      imageUrl: coverPhotoUrl!,
+                      fit: BoxFit.cover,
+                      placeholder:
+                          (_, _) => Image.asset(image, fit: BoxFit.cover),
+                      errorWidget:
+                          (_, _, _) => Image.asset(image, fit: BoxFit.cover),
+                    )
                   else
                     Image.asset(image, fit: BoxFit.cover),
                   const DecoratedBox(

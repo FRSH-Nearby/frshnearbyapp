@@ -118,6 +118,13 @@ class VerificationDocumentUpload {
   };
 }
 
+class FarmMediaUploadResult {
+  const FarmMediaUploadResult({required this.kind, required this.url});
+
+  final String kind;
+  final String url;
+}
+
 class ConfirmedLocation {
   const ConfirmedLocation({
     required this.addressLine,
@@ -240,7 +247,7 @@ class BackendService {
 
   Future<BackendUser> session() async {
     final data = await _gql(
-      'query { session { user { onboardingStep verificationStatus latestVerificationRequestTitle latestVerificationMessage latestVerificationRequestedDocuments latestVerificationRequiresTextResponse roles displayName phone photoUrl dateOfBirth addressLine addressUnit city postalCode country latitude longitude producerProfile { id publicName description productionType address city postalCode country } businessProfile { id publicDisplayName description legalBusinessName farmName businessId vatNumber businessType businessAddress city postalCode country logoUrl } } } }',
+      'query { session { user { onboardingStep verificationStatus latestVerificationRequestTitle latestVerificationMessage latestVerificationRequestedDocuments latestVerificationRequiresTextResponse roles displayName phone photoUrl dateOfBirth addressLine addressUnit city postalCode country latitude longitude producerProfile { id publicName description profilePhotoUrl coverPhotoUrl productionType address city postalCode country } businessProfile { id publicDisplayName description profilePhotoUrl coverPhotoUrl legalBusinessName farmName businessId vatNumber businessType businessAddress city postalCode country logoUrl } } } }',
     );
     return BackendUser.fromJson(
       (data['session'] as Map<String, dynamic>)['user'] as Map<String, dynamic>,
@@ -334,6 +341,28 @@ class BackendService {
     'mutation(\$input: BusinessProfileInput!) { saveBusinessProfile(input: \$input) { id } }',
     {'input': input},
   );
+
+  Future<FarmMediaUploadResult> uploadFarmMedia({
+    required String kind,
+    required String mimeType,
+    required Uint8List bytes,
+  }) async {
+    final data = await _gql(
+      'mutation(\$input: FarmMediaUploadInput!) { uploadFarmMedia(input: \$input) { kind url } }',
+      {
+        'input': {
+          'kind': kind,
+          'mimeType': mimeType,
+          'base64Data': base64Encode(bytes),
+        },
+      },
+    );
+    final result = data['uploadFarmMedia'] as Map<String, dynamic>;
+    return FarmMediaUploadResult(
+      kind: result['kind'] as String,
+      url: result['url'] as String,
+    );
+  }
 
   Future<void> submitForVerification({
     required List<VerificationDocumentUpload> documents,
