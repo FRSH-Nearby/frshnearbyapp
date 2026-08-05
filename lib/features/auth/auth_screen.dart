@@ -13,6 +13,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../notifications/push_notification_service.dart';
 import '../hot_sales/hot_sales.dart';
+import '../customer/consumer_explore.dart';
 
 import 'auth_service.dart';
 import 'backend_service.dart';
@@ -2751,7 +2752,13 @@ class _MainAppShellState extends State<_MainAppShell> {
     final pages =
         isConsumerMode
             ? <Widget>[
-              _ConsumerDashboardPage(fullName: widget.fullName),
+              if (widget.location == null)
+                const _FutureTab(
+                  icon: Icons.location_off_outlined,
+                  title: 'Confirm your location to explore nearby Hot Sales',
+                )
+              else
+                ConsumerExplorePage(location: widget.location!),
               const _FutureTab(
                 icon: Icons.storefront_outlined,
                 title: 'Your local marketplace is coming next',
@@ -2807,9 +2814,9 @@ class _MainAppShellState extends State<_MainAppShell> {
         isConsumerMode
             ? [
               NavigationDestination(
-                icon: const Icon(Icons.home_outlined),
-                selectedIcon: const Icon(Icons.home_rounded),
-                label: localizeText(context, 'Home'),
+                icon: const Icon(Icons.map_outlined),
+                selectedIcon: const Icon(Icons.map_rounded),
+                label: localizeText(context, 'Explore'),
               ),
               NavigationDestination(
                 icon: const Icon(Icons.storefront_outlined),
@@ -2892,6 +2899,7 @@ class _MainAppShellState extends State<_MainAppShell> {
   }
 }
 
+// ignore: unused_element
 class _ConsumerDashboardPage extends StatefulWidget {
   const _ConsumerDashboardPage({required this.fullName});
   final String fullName;
