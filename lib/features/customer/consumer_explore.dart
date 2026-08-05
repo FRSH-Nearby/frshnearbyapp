@@ -184,6 +184,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
                 sales: sales,
                 selectedId: _selectedId,
                 onFarmSelect: _openFarmSales,
+                onProductSelect: _showSaleDetails,
               ),
             ),
             SafeArea(
@@ -235,6 +236,7 @@ class _SalesMap extends StatelessWidget {
     required this.sales,
     required this.selectedId,
     required this.onFarmSelect,
+    required this.onProductSelect,
   });
 
   final MapController controller;
@@ -242,6 +244,7 @@ class _SalesMap extends StatelessWidget {
   final List<_NearbySale> sales;
   final String? selectedId;
   final ValueChanged<List<_NearbySale>> onFarmSelect;
+  final ValueChanged<_NearbySale> onProductSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -279,6 +282,7 @@ class _SalesMap extends StatelessWidget {
                   sales: farmSales,
                   selected: farmSales.any((sale) => sale.id == selectedId),
                   onTap: () => onFarmSelect(farmSales),
+                  onProductTap: onProductSelect,
                 ),
               ),
             ),
@@ -422,10 +426,12 @@ class _FarmMarker extends StatelessWidget {
     required this.sales,
     required this.selected,
     required this.onTap,
+    required this.onProductTap,
   });
   final List<_NearbySale> sales;
   final bool selected;
   final VoidCallback onTap;
+  final ValueChanged<_NearbySale> onProductTap;
 
   @override
   Widget build(BuildContext context) {
@@ -435,46 +441,63 @@ class _FarmMarker extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
+          SizedBox(
+            width: 104,
+            height: 60,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
               if (sales.isNotEmpty)
                 Positioned(
-                  left: -22,
+                  left: 0,
                   bottom: 2,
-                  child: Container(
-                    width: 35,
-                    height: 35,
-                    padding: const EdgeInsets.all(2),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(color: Colors.black26, blurRadius: 6),
-                      ],
-                    ),
-                    child: ClipOval(
-                      child: Image.memory(sales.first.imageBytes, fit: BoxFit.cover),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onProductTap(sales.first),
+                    child: Container(
+                      width: 35,
+                      height: 35,
+                      padding: const EdgeInsets.all(2),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(color: Colors.black26, blurRadius: 6),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: Image.memory(
+                          sales.first.imageBytes,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               if (sales.length > 1)
                 Positioned(
-                  right: -22,
+                  right: 0,
                   bottom: 2,
-                  child: Container(
-                    width: 35,
-                    height: 35,
-                    padding: const EdgeInsets.all(2),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(color: Colors.black26, blurRadius: 6),
-                      ],
-                    ),
-                    child: ClipOval(
-                      child: Image.memory(sales[1].imageBytes, fit: BoxFit.cover),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onProductTap(sales[1]),
+                    child: Container(
+                      width: 35,
+                      height: 35,
+                      padding: const EdgeInsets.all(2),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(color: Colors.black26, blurRadius: 6),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: Image.memory(
+                          sales[1].imageBytes,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -509,8 +532,8 @@ class _FarmMarker extends StatelessWidget {
                 ),
               ),
               Positioned(
-                right: -9,
-                top: -7,
+                right: 18,
+                top: 0,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                   decoration: BoxDecoration(
@@ -528,7 +551,8 @@ class _FarmMarker extends StatelessWidget {
                   ),
                 ),
               ),
-            ],
+              ],
+            ),
           ),
           Container(width: 3, height: 10, color: _green),
         ],
