@@ -88,41 +88,43 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
         );
       }
       final sales = snapshot.data ?? const [];
-      return Stack(
-        children: [
-          Positioned.fill(
-            child:
-                _showList
-                    ? _SalesList(sales: sales, onSelect: _select)
-                    : _SalesMap(
-                      controller: _mapController,
-                      location: widget.location,
-                      sales: sales,
-                      selectedId: _selectedId,
-                      onSelect: _select,
-                    ),
-          ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: _ExploreHeader(
-                location: widget.location,
-                count: sales.length,
-                showList: _showList,
-                onToggle: () => setState(() => _showList = !_showList),
-                onRefresh: _retry,
-              ),
+      return SizedBox.expand(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child:
+                  _showList
+                      ? _SalesList(sales: sales, onSelect: _select)
+                      : _SalesMap(
+                        controller: _mapController,
+                        location: widget.location,
+                        sales: sales,
+                        selectedId: _selectedId,
+                        onSelect: _select,
+                      ),
             ),
-          ),
-          if (!_showList && sales.isEmpty)
-            const Positioned.fill(
-              child: IgnorePointer(
-                child: Center(
-                  child: _EmptyMapCard(),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: _ExploreHeader(
+                  location: widget.location,
+                  count: sales.length,
+                  showList: _showList,
+                  onToggle: () => setState(() => _showList = !_showList),
+                  onRefresh: _retry,
                 ),
               ),
             ),
-        ],
+            if (!_showList && sales.isEmpty)
+              const Positioned.fill(
+                child: IgnorePointer(
+                  child: Center(
+                    child: _EmptyMapCard(),
+                  ),
+                ),
+              ),
+          ],
+        ),
       );
     },
   );
