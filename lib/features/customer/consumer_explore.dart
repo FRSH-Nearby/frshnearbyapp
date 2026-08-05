@@ -31,6 +31,8 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
   bool _showFarmTile = false;
   String? _selectedId;
   List<_NearbySale> _selectedFarmSales = const [];
+  List<_NearbySale> _knownSales = const [];
+  final Map<String, Map<String, double>> _farmBaskets = {};
 
   @override
   void initState() {
@@ -81,9 +83,11 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
       );
     }
     final data = body['data'] as Map<String, dynamic>?;
-    return ((data?['nearbyHotSales'] as List<dynamic>?) ?? const [])
+    final loaded = ((data?['nearbyHotSales'] as List<dynamic>?) ?? const [])
         .map((item) => _NearbySale(item as Map<String, dynamic>))
         .toList();
+    _knownSales = loaded;
+    return loaded;
   }
 
   void _retry() => setState(() => _sales = _load(_position));
@@ -122,11 +126,74 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
   }
 
   void _showSaleDetails(_NearbySale sale) {
+    setState(() {
+      _selectedId = sale.id;
+      _selectedFarmSales =
+          _knownSales.where((item) => item.farmId == sale.farmId).toList();
+    });
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _SaleDetailsSheet(sale: sale),
+      builder:
+          (_) => StatefulBuilder(
+            builder:
+                (_, modalSetState) => _SaleDetailsSheet(
+                  sale: sale,
+                  selectedQuantity: _basketQuantity(sale),
+                  onAdd: () {
+                    _changeBasket(sale, sale.quantityStep);
+                    modalSetState(() {});
+                  },
+                  onRemove: () {
+                    _changeBasket(sale, -sale.quantityStep);
+                    modalSetState(() {});
+                  },
+                ),
+          ),
+    );
+  }
+
+  Map<String, double> _basketFor(_NearbySale sale) =>
+      _farmBaskets.putIfAbsent(sale.farmId, () => {});
+
+  double _basketQuantity(_NearbySale sale) => _basketFor(sale)[sale.id] ?? 0;
+
+  void _changeBasket(_NearbySale sale, double change) {
+    final basket = _basketFor(sale);
+    final next = ((_basketQuantity(sale) + change).clamp(0, sale.quantity)).toDouble();
+    setState(() {
+      if (next <= 0) {
+        basket.remove(sale.id);
+      } else {
+        basket[sale.id] = next;
+      }
+    });
+  }
+
+  List<_NearbySale> _basketSales(String farmId) {
+    final basket = _farmBaskets[farmId] ?? const <String, double>{};
+    return _knownSales.where((sale) => sale.farmId == farmId && basket.containsKey(sale.id)).toList();
+  }
+
+  void _openBasket(String farmId) {
+    final sales = _basketSales(farmId);
+    if (sales.isEmpty) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder:
+          (_) => _BasketSheet(
+            sales: sales,
+            quantityFor: _basketQuantity,
+            onAdd: (sale) => _changeBasket(sale, sale.quantityStep),
+            onRemove: (sale) => _changeBasket(sale, -sale.quantityStep),
+            onOrdered: () {
+              setState(() => _farmBaskets.remove(farmId));
+              _retry();
+            },
+          ),
     );
   }
 
@@ -174,6 +241,14 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
         );
       }
       final sales = snapshot.data ?? const [];
+      final activeFarmId =
+          _selectedFarmSales.isEmpty ? null : _selectedFarmSales.first.farmId;
+      final activeBasketSales =
+          activeFarmId == null ? const <_NearbySale>[] : _basketSales(activeFarmId);
+      final activeTotal = activeBasketSales.fold<double>(
+        0,
+        (total, sale) => total + _basketQuantity(sale) * sale.priceCents / 100,
+      );
       return SizedBox.expand(
         child: Stack(
           children: [
@@ -216,10 +291,21 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
               Positioned(
                 left: 0,
                 right: 0,
-                bottom: 14,
+                bottom: activeBasketSales.isEmpty ? 14 : 76,
                 child: _FarmProductCarousel(
                   sales: _selectedFarmSales,
                   onDetails: _showSaleDetails,
+                ),
+              ),
+            if (activeFarmId != null && activeBasketSales.isNotEmpty)
+              Positioned(
+                left: 14,
+                right: 14,
+                bottom: 12,
+                child: _BasketBar(
+                  lines: activeBasketSales.length,
+                  total: activeTotal,
+                  onTap: () => _openBasket(activeFarmId),
                 ),
               ),
           ],
@@ -713,8 +799,6 @@ class _MapProductCard extends StatelessWidget {
   );
 }
 
-// Order controls return in step 2 after the farm discovery UI is approved.
-// ignore: unused_element
 class _QuantityControl extends StatelessWidget {
   const _QuantityControl({
     required this.sale,
@@ -774,7 +858,6 @@ class _QuantityControl extends StatelessWidget {
   }
 }
 
-// ignore: unused_element
 class _BasketBar extends StatelessWidget {
   const _BasketBar({required this.lines, required this.total, required this.onTap});
   final int lines;
@@ -809,29 +892,92 @@ class _BasketBar extends StatelessWidget {
   );
 }
 
-// ignore: unused_element
 class _BasketSheet extends StatefulWidget {
   const _BasketSheet({
     required this.sales,
     required this.quantityFor,
     required this.onAdd,
     required this.onRemove,
+    required this.onOrdered,
   });
   final List<_NearbySale> sales;
   final double Function(_NearbySale) quantityFor;
   final ValueChanged<_NearbySale> onAdd;
   final ValueChanged<_NearbySale> onRemove;
+  final VoidCallback onOrdered;
 
   @override
   State<_BasketSheet> createState() => _BasketSheetState();
 }
 
 class _BasketSheetState extends State<_BasketSheet> {
+  String? _pickupType;
+  String? _rekoRingId;
+  bool _submitting = false;
+  String? _error;
+
+  List<_NearbySale> get _activeSales =>
+      widget.sales.where((sale) => widget.quantityFor(sale) > 0).toList();
+  bool get _farmEligible => _activeSales.isNotEmpty && _activeSales.every((sale) => sale.availableAtFarm);
+  List<_RekoPickup> get _commonRings {
+    if (_activeSales.isEmpty) return const [];
+    return _activeSales.first.rekoRings
+        .where(
+          (ring) => _activeSales.every(
+            (sale) => sale.rekoRings.any((candidate) => candidate.id == ring.id),
+          ),
+        )
+        .toList();
+  }
+
   double get _total => widget.sales.fold(
     0.0,
     (total, sale) =>
         total + widget.quantityFor(sale) * sale.priceCents / 100,
   );
+
+  Future<void> _requestOrder() async {
+    if (_pickupType == null || (_pickupType == 'REKO' && _rekoRingId == null)) {
+      setState(() => _error = 'Select a pickup place.');
+      return;
+    }
+    setState(() { _submitting = true; _error = null; });
+    try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (token == null) throw StateError('Please sign in again.');
+      final dio = Dio(BaseOptions(baseUrl: const String.fromEnvironment('FRSH_API_URL', defaultValue: 'https://frshnearby-api.onrender.com/graphql')));
+      final response = await dio.post<Map<String, dynamic>>(
+        '',
+        data: {
+          'query': 'mutation RequestOrder(\$input: RequestOrderInput!) { requestOrder(input: \$input) { id status } }',
+          'variables': {
+            'input': {
+              'pickupType': _pickupType,
+              if (_rekoRingId != null) 'rekoRingId': _rekoRingId,
+              'items': _activeSales.map((sale) => {
+                'hotSaleId': sale.id,
+                'quantity': widget.quantityFor(sale),
+              }).toList(),
+            },
+          },
+        },
+        options: Options(headers: {'authorization': 'Bearer $token'}),
+      );
+      final body = response.data ?? const {};
+      final errors = body['errors'] as List<dynamic>?;
+      if (errors?.isNotEmpty == true) {
+        throw StateError((errors!.first as Map<String, dynamic>)['message'] as String? ?? 'Order request failed.');
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order request sent to the farm.')));
+      widget.onOrdered();
+      Navigator.of(context).pop();
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => FractionallySizedBox(
@@ -915,6 +1061,28 @@ class _BasketSheetState extends State<_BasketSheet> {
               ),
             ),
             const SizedBox(height: 12),
+            const Text('Pickup place', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+            if (_farmEligible)
+              RadioListTile<String>(
+                value: 'FARM',
+                groupValue: _pickupType,
+                onChanged: (value) => setState(() { _pickupType = value; _rekoRingId = null; }),
+                title: const Text('Farm pickup'),
+                subtitle: Text(widget.sales.first.farmLocation),
+              ),
+            for (final ring in _commonRings)
+              RadioListTile<String>(
+                value: ring.id,
+                groupValue: _pickupType == 'REKO' ? _rekoRingId : null,
+                onChanged: (value) => setState(() { _pickupType = 'REKO'; _rekoRingId = value; }),
+                title: Text(ring.name),
+                subtitle: Text(ring.details),
+              ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(_error!, style: const TextStyle(color: Colors.red)),
+              ),
             Row(
               children: [
                 const Expanded(child: Text('Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800))),
@@ -925,9 +1093,9 @@ class _BasketSheetState extends State<_BasketSheet> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: null,
+                onPressed: _submitting || _activeSales.isEmpty ? null : _requestOrder,
                 style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
-                child: const Text('Checkout comes after UI approval'),
+                child: Text(_submitting ? 'Sending request…' : 'Request order • €${_total.toStringAsFixed(2)}'),
               ),
             ),
           ],
@@ -1036,8 +1204,16 @@ class _FarmSalesSheet extends StatelessWidget {
 }
 
 class _SaleDetailsSheet extends StatelessWidget {
-  const _SaleDetailsSheet({required this.sale});
+  const _SaleDetailsSheet({
+    required this.sale,
+    required this.selectedQuantity,
+    required this.onAdd,
+    required this.onRemove,
+  });
   final _NearbySale sale;
+  final double selectedQuantity;
+  final VoidCallback onAdd;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) => FractionallySizedBox(
@@ -1098,6 +1274,21 @@ class _SaleDetailsSheet extends StatelessWidget {
                   '${sale.quantityLabel} available • ${sale.distanceKm.toStringAsFixed(1)} km away',
                   style: const TextStyle(color: Colors.black54),
                 ),
+                const SizedBox(height: 14),
+                _QuantityControl(
+                  sale: sale,
+                  selectedQuantity: selectedQuantity,
+                  onAdd: onAdd,
+                  onRemove: onRemove,
+                ),
+                if (selectedQuantity > 0) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Subtotal €${(selectedQuantity * sale.priceCents / 100).toStringAsFixed(2)}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: _green, fontWeight: FontWeight.w900),
+                  ),
+                ],
                 const SizedBox(height: 18),
                 Text(sale.description, style: const TextStyle(height: 1.5)),
                 if (sale.productionDetail?.isNotEmpty == true) ...[
@@ -1301,6 +1492,7 @@ class _NearbySale {
 class _RekoPickup {
   const _RekoPickup(this.json);
   final Map<String, dynamic> json;
+  String get id => json['id'] as String;
   String get name => json['name'] as String;
   String get details {
     final schedule = json['schedule'] as Map<String, dynamic>?;

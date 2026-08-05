@@ -14,6 +14,7 @@ import 'package:image_picker/image_picker.dart';
 import '../notifications/push_notification_service.dart';
 import '../hot_sales/hot_sales.dart';
 import '../customer/consumer_explore.dart';
+import '../orders/orders_screen.dart';
 
 import 'auth_service.dart';
 import 'backend_service.dart';
@@ -2759,10 +2760,7 @@ class _MainAppShellState extends State<_MainAppShell> {
                 )
               else
                 ConsumerExplorePage(location: widget.location!),
-              const _FutureTab(
-                icon: Icons.storefront_outlined,
-                title: 'Your local marketplace is coming next',
-              ),
+              const OrdersScreen(seller: false),
               _ConsumerProfilePage(
                 fullName: widget.fullName,
                 email: widget.email,
@@ -2783,10 +2781,7 @@ class _MainAppShellState extends State<_MainAppShell> {
                 location: widget.location,
                 verificationStatus: widget.verificationStatus,
               ),
-              const _FutureTab(
-                icon: Icons.receipt_long_outlined,
-                title: 'Seller orders are coming next',
-              ),
+              const OrdersScreen(seller: true),
               _RevampedProfilePage(
                 type: _activeType,
                 fullName: widget.fullName,
@@ -2819,9 +2814,9 @@ class _MainAppShellState extends State<_MainAppShell> {
                 label: localizeText(context, 'Explore'),
               ),
               NavigationDestination(
-                icon: const Icon(Icons.storefront_outlined),
-                selectedIcon: const Icon(Icons.storefront_rounded),
-                label: localizeText(context, 'Market'),
+                icon: const Icon(Icons.receipt_long_outlined),
+                selectedIcon: const Icon(Icons.receipt_long_rounded),
+                label: localizeText(context, 'Orders'),
               ),
               NavigationDestination(
                 icon: const Icon(Icons.person_outline_rounded),
