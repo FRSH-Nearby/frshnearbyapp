@@ -30,6 +30,8 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
   bool _usingLiveLocation = false;
   bool _locating = false;
   String? _selectedId;
+  List<_NearbySale> _selectedFarmSales = const [];
+  final Map<String, double> _basket = {};
 
   @override
   void initState() {
@@ -55,7 +57,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
       data: {
         'query': '''query NearbyHotSales(\$latitude: Float!, \$longitude: Float!) {
           nearbyHotSales(radiusKm: 50, limit: 50, latitude: \$latitude, longitude: \$longitude) {
-            id originalTitle description unit customUnit priceCents quantity
+            id originalTitle description unit customUnit quantityStep priceCents quantity
             productionDetail producedAt availableAtFarm
             imageMimeType imageBase64 farmId farmName farmProfilePhotoUrl
             latitude longitude farmAddress farmCity distanceKm
@@ -138,35 +140,38 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
   }
 
   void _openFarmSales(List<_NearbySale> sales) {
-    if (sales.length == 1) {
-      _select(sales.first);
-      return;
-    }
-    setState(() => _selectedId = sales.first.id);
-    if (!_showList) {
-      _mapController.move(
-        LatLng(sales.first.latitude, sales.first.longitude),
-        15.5,
-      );
-    }
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder:
-          (sheetContext) => _FarmSalesSheet(
-            sales: sales,
-            onSelect: (sale) {
-              Navigator.of(sheetContext).pop();
-              Future<void>.delayed(
-                const Duration(milliseconds: 180),
-                () {
-                  if (mounted) _showSaleDetails(sale);
-                },
-              );
-            },
-          ),
+    setState(() {
+      _selectedId = sales.first.id;
+      _selectedFarmSales = sales;
+    });
+    _mapController.move(
+      LatLng(sales.first.latitude, sales.first.longitude),
+      15.5,
     );
+  }
+
+  double _basketQuantity(_NearbySale sale) => _basket[sale.id] ?? 0;
+
+  void _changeBasket(_NearbySale sale, double change) {
+    final current = _basketQuantity(sale);
+    final next = (current + change).clamp(0, sale.quantity).toDouble();
+    setState(() {
+      if (next <= 0) {
+        _basket.remove(sale.id);
+      } else {
+        _basket[sale.id] = next;
+      }
+    });
+  }
+
+  int get _basketLines => _basket.values.where((quantity) => quantity > 0).length;
+
+  double _basketTotal(List<_NearbySale> sales) {
+    var total = 0.0;
+    for (final sale in sales) {
+      total += _basketQuantity(sale) * sale.priceCents;
+    }
+    return total / 100;
   }
 
   @override
@@ -223,6 +228,53 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
                   child: Center(
                     child: _EmptyMapCard(),
                   ),
+                ),
+              ),
+            if (!_showList && _selectedFarmSales.isNotEmpty)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: _basketLines == 0 ? 14 : 76,
+                child: _FarmProductCarousel(
+                  sales: _selectedFarmSales,
+                  quantityFor: _basketQuantity,
+                  onAdd: (sale) => _changeBasket(sale, sale.quantityStep),
+                  onRemove: (sale) => _changeBasket(sale, -sale.quantityStep),
+                  onDetails: _showSaleDetails,
+                ),
+              ),
+            if (_basketLines > 0)
+              Positioned(
+                left: 14,
+                right: 14,
+                bottom: 12,
+                child: _BasketBar(
+                  lines: _basketLines,
+                  total: _basketTotal(sales),
+                  onTap:
+                      () => showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder:
+                            (_) => _BasketSheet(
+                              sales:
+                                  sales
+                                      .where((sale) => _basket.containsKey(sale.id))
+                                      .toList(),
+                              quantityFor: _basketQuantity,
+                              onAdd:
+                                  (sale) => _changeBasket(
+                                    sale,
+                                    sale.quantityStep,
+                                  ),
+                              onRemove:
+                                  (sale) => _changeBasket(
+                                    sale,
+                                    -sale.quantityStep,
+                                  ),
+                            ),
+                      ),
                 ),
               ),
           ],
@@ -504,6 +556,349 @@ class _UserMarker extends StatelessWidget {
   );
 }
 
+class _FarmProductCarousel extends StatelessWidget {
+  const _FarmProductCarousel({
+    required this.sales,
+    required this.quantityFor,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onDetails,
+  });
+  final List<_NearbySale> sales;
+  final double Function(_NearbySale) quantityFor;
+  final ValueChanged<_NearbySale> onAdd;
+  final ValueChanged<_NearbySale> onRemove;
+  final ValueChanged<_NearbySale> onDetails;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 174,
+    child: ListView.separated(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      itemCount: sales.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 10),
+      itemBuilder: (_, index) {
+        final sale = sales[index];
+        return _MapProductCard(
+          sale: sale,
+          selectedQuantity: quantityFor(sale),
+          onAdd: () => onAdd(sale),
+          onRemove: () => onRemove(sale),
+          onDetails: () => onDetails(sale),
+        );
+      },
+    ),
+  );
+}
+
+class _MapProductCard extends StatelessWidget {
+  const _MapProductCard({
+    required this.sale,
+    required this.selectedQuantity,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onDetails,
+  });
+  final _NearbySale sale;
+  final double selectedQuantity;
+  final VoidCallback onAdd;
+  final VoidCallback onRemove;
+  final VoidCallback onDetails;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    elevation: 7,
+    borderRadius: BorderRadius.circular(22),
+    clipBehavior: Clip.antiAlias,
+    child: SizedBox(
+      width: 310,
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          children: [
+            InkWell(
+              onTap: onDetails,
+              borderRadius: BorderRadius.circular(16),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.memory(
+                  sale.imageBytes,
+                  width: 112,
+                  height: 148,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  InkWell(
+                    onTap: onDetails,
+                    child: Text(
+                      sale.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    sale.price,
+                    style: const TextStyle(
+                      color: _green,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${sale.quantityLabel} left',
+                    style: const TextStyle(color: Colors.black54, fontSize: 12),
+                  ),
+                  const Spacer(),
+                  _QuantityControl(
+                    sale: sale,
+                    selectedQuantity: selectedQuantity,
+                    onAdd: onAdd,
+                    onRemove: onRemove,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _QuantityControl extends StatelessWidget {
+  const _QuantityControl({
+    required this.sale,
+    required this.selectedQuantity,
+    required this.onAdd,
+    required this.onRemove,
+  });
+  final _NearbySale sale;
+  final double selectedQuantity;
+  final VoidCallback onAdd;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    if (selectedQuantity <= 0) {
+      return SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          onPressed: sale.quantity > 0 ? onAdd : null,
+          icon: const Icon(Icons.add_rounded, size: 18),
+          label: const Text('Add'),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+          ),
+        ),
+      );
+    }
+    final canAdd = selectedQuantity + sale.quantityStep <= sale.quantity + .0001;
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFE6F0E1),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          IconButton(
+            onPressed: onRemove,
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.remove_rounded),
+          ),
+          Expanded(
+            child: Text(
+              sale.formatQuantity(selectedQuantity),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+          IconButton(
+            onPressed: canAdd ? onAdd : null,
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.add_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BasketBar extends StatelessWidget {
+  const _BasketBar({required this.lines, required this.total, required this.onTap});
+  final int lines;
+  final double total;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => FilledButton(
+    onPressed: onTap,
+    style: FilledButton.styleFrom(
+      backgroundColor: const Color(0xFF173F2B),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      elevation: 8,
+    ),
+    child: Row(
+      children: [
+        const Icon(Icons.shopping_basket_outlined),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            '$lines ${lines == 1 ? 'product' : 'products'} in basket',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ),
+        Text(
+          '€${total.toStringAsFixed(2)}',
+          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+        ),
+      ],
+    ),
+  );
+}
+
+class _BasketSheet extends StatefulWidget {
+  const _BasketSheet({
+    required this.sales,
+    required this.quantityFor,
+    required this.onAdd,
+    required this.onRemove,
+  });
+  final List<_NearbySale> sales;
+  final double Function(_NearbySale) quantityFor;
+  final ValueChanged<_NearbySale> onAdd;
+  final ValueChanged<_NearbySale> onRemove;
+
+  @override
+  State<_BasketSheet> createState() => _BasketSheetState();
+}
+
+class _BasketSheetState extends State<_BasketSheet> {
+  double get _total => widget.sales.fold(
+    0.0,
+    (total, sale) =>
+        total + widget.quantityFor(sale) * sale.priceCents / 100,
+  );
+
+  @override
+  Widget build(BuildContext context) => FractionallySizedBox(
+    heightFactor: .78,
+    child: Material(
+      color: _cream,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'Your basket',
+              style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 14),
+            Expanded(
+              child: ListView(
+                children: [
+                  for (final sale in widget.sales)
+                    if (widget.quantityFor(sale) > 0)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Row(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(13),
+                              child: Image.memory(
+                                sale.imageBytes,
+                                width: 62,
+                                height: 62,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(sale.title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                                  Text(sale.farmName, style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                                ],
+                              ),
+                            ),
+                            SizedBox(
+                              width: 142,
+                              child: _QuantityControl(
+                                sale: sale,
+                                selectedQuantity: widget.quantityFor(sale),
+                                onAdd: () {
+                                  widget.onAdd(sale);
+                                  setState(() {});
+                                },
+                                onRemove: () {
+                                  widget.onRemove(sale);
+                                  setState(() {});
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Expanded(child: Text('Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800))),
+                Text('€${_total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: null,
+                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                child: const Text('Checkout comes after UI approval'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+// ignore: unused_element
 class _FarmSalesSheet extends StatelessWidget {
   const _FarmSalesSheet({required this.sales, required this.onSelect});
   final List<_NearbySale> sales;
@@ -849,6 +1244,8 @@ class _NearbySale {
   double get longitude => (json['longitude'] as num).toDouble();
   double get distanceKm => (json['distanceKm'] as num).toDouble();
   double get quantity => (json['quantity'] as num).toDouble();
+  double get quantityStep => (json['quantityStep'] as num?)?.toDouble() ?? 1;
+  int get priceCents => (json['priceCents'] as num).toInt();
   bool get availableAtFarm => json['availableAtFarm'] as bool? ?? false;
   List<_RekoPickup> get rekoRings =>
       ((json['rekoRings'] as List<dynamic>?) ?? const [])
@@ -856,8 +1253,10 @@ class _NearbySale {
           .toList();
   String get unit => (json['customUnit'] as String?) ?? (json['unit'] as String).toLowerCase();
   Uint8List get imageBytes => base64Decode(json['imageBase64'] as String);
-  String get price => '€${((json['priceCents'] as num) / 100).toStringAsFixed(2)} / $unit';
+  String get price => '€${(priceCents / 100).toStringAsFixed(2)} / $unit';
   String get quantityLabel => '${quantity.toStringAsFixed(quantity % 1 == 0 ? 0 : 1)} $unit';
+  String formatQuantity(double value) =>
+      '${value.toStringAsFixed(value % 1 == 0 ? 0 : 2)} $unit';
 }
 
 class _RekoPickup {
