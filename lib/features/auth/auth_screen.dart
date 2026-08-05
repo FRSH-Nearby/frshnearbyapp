@@ -1075,6 +1075,8 @@ class _AuthScreenState extends State<AuthScreen>
         profilePhotoBytes: _pickedPhotoBytes,
         publicName: _displayNameController.text.trim(),
         businessName: _businessNameController.text.trim(),
+        farmName: _farmNameController.text.trim(),
+        farmDescription: _introController.text.trim(),
         location: _confirmedLocation,
         verificationStatus: _verificationStatus,
         verificationRequestTitle: _verificationRequestTitle,
@@ -2386,6 +2388,8 @@ class _MainAppShell extends StatefulWidget {
     required this.profilePhotoBytes,
     required this.publicName,
     required this.businessName,
+    required this.farmName,
+    required this.farmDescription,
     required this.location,
     required this.verificationStatus,
     required this.verificationRequestTitle,
@@ -2408,6 +2412,8 @@ class _MainAppShell extends StatefulWidget {
   final Uint8List? profilePhotoBytes;
   final String publicName;
   final String businessName;
+  final String farmName;
+  final String farmDescription;
   final ConfirmedLocation? location;
   final String verificationStatus;
   final String? verificationRequestTitle;
@@ -2429,6 +2435,7 @@ class _MainAppShellState extends State<_MainAppShell> {
   final _preferences = AppPreferencesStore();
   late _AccountType _activeType = widget.type;
   Uint8List? _coverPhotoBytes;
+  Uint8List? _farmProfilePhotoBytes;
 
   @override
   void initState() {
@@ -2496,6 +2503,17 @@ class _MainAppShellState extends State<_MainAppShell> {
     if (mounted) setState(() => _coverPhotoBytes = bytes);
   }
 
+  Future<void> _changeFarmProfilePhoto() async {
+    final photo = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 84,
+      maxWidth: 1000,
+    );
+    if (photo == null) return;
+    final bytes = await photo.readAsBytes();
+    if (mounted) setState(() => _farmProfilePhotoBytes = bytes);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isConsumerMode = _activeType == _AccountType.consumer;
@@ -2512,6 +2530,7 @@ class _MainAppShellState extends State<_MainAppShell> {
                 email: widget.email,
                 phone: widget.phone,
                 photoUrl: widget.photoUrl,
+                profilePhotoBytes: widget.profilePhotoBytes,
                 onEditProfile: widget.onEditProfile,
                 onOpenSettings: _openSettings,
                 onSignOut: widget.onSignOut,
@@ -2533,18 +2552,20 @@ class _MainAppShellState extends State<_MainAppShell> {
               _RevampedProfilePage(
                 type: _activeType,
                 fullName: widget.fullName,
-                email: widget.email,
-                phone: widget.phone,
-                photoUrl: widget.photoUrl,
-                profilePhotoBytes: widget.profilePhotoBytes,
+                photoUrl: null,
+                profilePhotoBytes: _farmProfilePhotoBytes,
                 publicName: widget.publicName,
                 businessName: widget.businessName,
+                farmName: widget.farmName,
+                farmDescription: widget.farmDescription,
                 location: widget.location,
                 verificationStatus: widget.verificationStatus,
                 coverPhotoBytes: _coverPhotoBytes,
                 followerCount: 0,
                 onChangeCoverPhoto: _changeCoverPhoto,
+                onChangeProfilePhoto: _changeFarmProfilePhoto,
                 onEditProfile: widget.onEditProfile,
+                onEditLocation: widget.onEditLocation,
                 onOpenSettings: _openSettings,
                 onEditBusiness: widget.onEditBusiness,
                 onSignOut: widget.onSignOut,
@@ -3156,6 +3177,7 @@ class _ConsumerProfilePage extends StatelessWidget {
     required this.email,
     required this.phone,
     required this.photoUrl,
+    required this.profilePhotoBytes,
     required this.onEditProfile,
     required this.onOpenSettings,
     required this.onSignOut,
@@ -3164,6 +3186,7 @@ class _ConsumerProfilePage extends StatelessWidget {
   final String email;
   final String phone;
   final String? photoUrl;
+  final Uint8List? profilePhotoBytes;
   final VoidCallback onEditProfile;
   final VoidCallback onOpenSettings;
   final VoidCallback onSignOut;
@@ -3206,6 +3229,7 @@ class _ConsumerProfilePage extends StatelessWidget {
           _ProfileIdentityCard(
             image: 'assets/images/role_consumer.jpg',
             photoUrl: photoUrl,
+            profilePhotoBytes: profilePhotoBytes,
             initialsSource: fullName,
             heading: fullName.isEmpty ? 'FRSH member' : fullName,
             badgeIcon: Icons.shopping_basket_outlined,
@@ -3303,18 +3327,20 @@ class _RevampedProfilePage extends StatelessWidget {
   const _RevampedProfilePage({
     required this.type,
     required this.fullName,
-    required this.email,
-    required this.phone,
     required this.photoUrl,
     required this.profilePhotoBytes,
     required this.publicName,
     required this.businessName,
+    required this.farmName,
+    required this.farmDescription,
     required this.location,
     required this.verificationStatus,
     required this.coverPhotoBytes,
     required this.followerCount,
     required this.onChangeCoverPhoto,
+    required this.onChangeProfilePhoto,
     required this.onEditProfile,
+    required this.onEditLocation,
     required this.onOpenSettings,
     required this.onEditBusiness,
     required this.onSignOut,
@@ -3322,18 +3348,20 @@ class _RevampedProfilePage extends StatelessWidget {
 
   final _AccountType type;
   final String fullName;
-  final String email;
-  final String phone;
   final String? photoUrl;
   final Uint8List? profilePhotoBytes;
   final String publicName;
   final String businessName;
+  final String farmName;
+  final String farmDescription;
   final ConfirmedLocation? location;
   final String verificationStatus;
   final Uint8List? coverPhotoBytes;
   final int followerCount;
   final VoidCallback onChangeCoverPhoto;
+  final VoidCallback onChangeProfilePhoto;
   final VoidCallback onEditProfile;
+  final VoidCallback onEditLocation;
   final VoidCallback onOpenSettings;
   final VoidCallback? onEditBusiness;
   final VoidCallback onSignOut;
@@ -3347,12 +3375,9 @@ class _RevampedProfilePage extends StatelessWidget {
   };
 
   String get _profileDisplayName {
-    if (type == _AccountType.business && businessName.isNotEmpty) {
-      return businessName;
-    }
-    if (type == _AccountType.producer && publicName.isNotEmpty) {
-      return publicName;
-    }
+    if (farmName.isNotEmpty) return farmName;
+    if (publicName.isNotEmpty) return publicName;
+    if (businessName.isNotEmpty) return businessName;
     return fullName.isEmpty ? 'FRSH member' : fullName;
   }
 
@@ -3408,40 +3433,53 @@ class _RevampedProfilePage extends StatelessWidget {
             coverPhotoBytes: coverPhotoBytes,
             photoUrl: photoUrl,
             profilePhotoBytes: profilePhotoBytes,
-            initialsSource: fullName,
+            initialsSource: _profileDisplayName,
             heading: _profileDisplayName,
             badgeIcon: _badgeIcon,
             badgeLabel: _accountLabel,
             verified: _isSeller && verificationStatus == 'VERIFIED',
             followerCount: _isSeller ? followerCount : null,
             onChangeCoverPhoto: _isSeller ? onChangeCoverPhoto : null,
-            onChangeProfilePhoto: _isSeller ? onEditProfile : null,
+            onChangeProfilePhoto: _isSeller ? onChangeProfilePhoto : null,
           ),
           const SizedBox(height: 20),
           _ProfileSection(
-            icon: Icons.person_outline_rounded,
-            title: 'Account details',
-            lines:
-                [email, phone].where((value) => value.isNotEmpty).toList(),
-            onEdit: onEditProfile,
+            icon: Icons.spa_outlined,
+            title: 'About the farm',
+            lines: [
+              if (farmDescription.isNotEmpty)
+                farmDescription
+              else
+                'Add a short introduction about what you grow or make.',
+            ],
+            onEdit: onEditBusiness ?? onEditProfile,
           ),
-          if (_isSeller) ...[
-            const SizedBox(height: 12),
-            _ProfileSection(
-              icon:
-                  type == _AccountType.business
-                      ? Icons.storefront_outlined
-                      : Icons.spa_outlined,
-              title:
-                  type == _AccountType.business
-                      ? (businessName.isEmpty
-                          ? 'Business profile'
-                          : businessName)
-                      : (publicName.isEmpty ? 'Seller profile' : publicName),
-              lines: [if (location != null) location!.formattedAddress],
-              onEdit: onEditBusiness ?? onEditProfile,
+          const SizedBox(height: 12),
+          _ProfileSection(
+            icon: Icons.location_on_outlined,
+            title: 'Farm location',
+            lines: [
+              if (location != null) location!.formattedAddress,
+              if (location != null)
+                [
+                  location!.postalCode,
+                  location!.city,
+                  location!.country,
+                ].where((value) => value.isNotEmpty).join(', ')
+              else
+                'Add the location customers should discover.',
+            ],
+            onEdit: onEditLocation,
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: onEditBusiness ?? onEditProfile,
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('Edit public farm profile'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 15),
             ),
-          ],
+          ),
           const SizedBox(height: 18),
           OutlinedButton.icon(
             onPressed: onSignOut,
