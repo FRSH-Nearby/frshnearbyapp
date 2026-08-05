@@ -3819,10 +3819,12 @@ class _ProfileIdentityCard extends StatelessWidget {
               child: Semantics(
                 button: onChangeProfilePhoto != null,
                 label: 'Change farm profile photo',
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: onChangeProfilePhoto,
-                  child: SizedBox(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onChangeProfilePhoto,
+                    customBorder: const CircleBorder(),
+                    child: SizedBox(
               width: 96,
               height: 96,
               child: Stack(
@@ -3869,22 +3871,22 @@ class _ProfileIdentityCard extends StatelessWidget {
                     Positioned(
                       right: 0,
                       bottom: 0,
-                      child: Material(
-                        color: _green,
-                        shape: const CircleBorder(),
-                        elevation: 2,
-                        child: IconButton(
-                          tooltip: 'Change farm profile photo',
-                          onPressed: onChangeProfilePhoto,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 34,
-                            height: 34,
-                          ),
-                          padding: EdgeInsets.zero,
-                          icon: const Icon(
-                            Icons.photo_camera_outlined,
-                            color: Colors.white,
-                            size: 18,
+                      child: IgnorePointer(
+                        child: Tooltip(
+                          message: 'Change farm profile photo',
+                          child: Material(
+                            color: _green,
+                            shape: const CircleBorder(),
+                            elevation: 2,
+                            child: const SizedBox(
+                              width: 34,
+                              height: 34,
+                              child: Icon(
+                                Icons.photo_camera_outlined,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -3893,6 +3895,7 @@ class _ProfileIdentityCard extends StatelessWidget {
                     ),
                   ),
                 ),
+              ),
               ),
             ),
           ],
