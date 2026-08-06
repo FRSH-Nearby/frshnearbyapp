@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+
+import '../../l10n/localized_text.dart';
 
 const _green = Color(0xFF2F6B45);
 const _cream = Color(0xFFFBFAF5);
@@ -124,7 +126,17 @@ class _StatusChip extends StatelessWidget {
   const _StatusChip({required this.status});
   final String status;
   @override
-  Widget build(BuildContext context) => Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFE6F0E1), borderRadius: BorderRadius.circular(99)), child: Text(status.replaceAll('_', ' ').toLowerCase(), style: const TextStyle(color: _green, fontSize: 11, fontWeight: FontWeight.w800)));
+  Widget build(BuildContext context) => Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFE6F0E1), borderRadius: BorderRadius.circular(99)), child: Text(_label(status), style: const TextStyle(color: _green, fontSize: 11, fontWeight: FontWeight.w800)));
+
+  String _label(String value) => switch (value) {
+    'REQUESTED' => 'Requested',
+    'ACCEPTED' => 'Accepted',
+    'REJECTED' => 'Rejected',
+    'READY_FOR_PICKUP' => 'Ready for pickup',
+    'COMPLETED' => 'Completed',
+    'CANCELLED' => 'Cancelled',
+    _ => value,
+  };
 }
 
 class _Order {

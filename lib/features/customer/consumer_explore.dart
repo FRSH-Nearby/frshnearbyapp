@@ -3,12 +3,13 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../auth/backend_service.dart';
+import '../../l10n/localized_text.dart';
 
 const _green = Color(0xFF2F6B45);
 const _cream = Color(0xFFFBFAF5);
@@ -58,8 +59,9 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
       data: {
         'query': '''query NearbyHotSales(\$latitude: Float!, \$longitude: Float!) {
           nearbyHotSales(radiusKm: 50, limit: 50, latitude: \$latitude, longitude: \$longitude) {
-            id originalTitle description unit customUnit quantityStep priceCents quantity
+            id originalLanguage detectedLanguage originalTitle description unit customUnit quantityStep priceCents quantity
             productionDetail producedAt availableAtFarm
+            translations { locale title description productionDetail status }
             imageMimeType imageBase64 farmId farmName farmProfilePhotoUrl
             latitude longitude farmAddress farmCity distanceKm
             rekoRings { id name municipality regionName addressLine postalCode
@@ -407,7 +409,7 @@ class _ExploreHeader extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            tooltip: 'Use current location',
+            tooltip: localizeText(context, 'Use current location'),
             onPressed: locating ? null : onLocate,
             icon:
                 locating
@@ -422,14 +424,18 @@ class _ExploreHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('$count Hot Sales nearby', style: const TextStyle(fontWeight: FontWeight.w800)),
+                Text('$count ${localizeText(context, 'Hot Sales nearby')}', style: const TextStyle(fontWeight: FontWeight.w800)),
                 Text(locationName, maxLines: 1, overflow: TextOverflow.ellipsis),
               ],
             ),
           ),
           IconButton(onPressed: onRefresh, icon: const Icon(Icons.refresh_rounded)),
           IconButton(
-            tooltip: showFarmTile ? 'Hide farm tile' : 'Show farm tile',
+            tooltip:
+                localizeText(
+                  context,
+                  showFarmTile ? 'Hide farm tile' : 'Show farm tile',
+                ),
             onPressed: onToggleFarmTile,
             icon: Icon(
               showFarmTile
@@ -491,12 +497,12 @@ class _SaleCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(sale.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                  Text(sale.titleFor(context), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                   const SizedBox(height: 4),
                   Text(sale.farmName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _green, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
-                  Text('${sale.price}  •  ${sale.distanceKm.toStringAsFixed(1)} km', style: const TextStyle(fontWeight: FontWeight.w700)),
-                  Text('${sale.quantityLabel} available', style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                  Text('${sale.priceFor(context)}  •  ${sale.distanceKm.toStringAsFixed(1)} km', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text('${sale.quantityLabelFor(context)} ${localizeText(context, 'available')}', style: const TextStyle(color: Colors.black54, fontSize: 12)),
                 ],
               ),
             ),
@@ -711,7 +717,7 @@ class _FarmProductCarousel extends StatelessWidget {
                       style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
                     ),
                     Text(
-                      '${sales.length} Hot Sales • ${farm.distanceKm.toStringAsFixed(1)} km away',
+                      '${sales.length} ${localizeText(context, 'Hot Sales')} • ${farm.distanceKm.toStringAsFixed(1)} ${localizeText(context, 'km away')}',
                       style: const TextStyle(color: Colors.black54, fontSize: 12),
                     ),
                   ],
@@ -773,7 +779,7 @@ class _MapProductCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(99),
                       ),
                       child: Text(
-                        sale.price,
+                        sale.priceFor(context),
                         style: const TextStyle(
                           color: _green,
                           fontSize: 10,
@@ -788,7 +794,7 @@ class _MapProductCard extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           Text(
-            sale.title,
+            sale.titleFor(context),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
@@ -842,7 +848,7 @@ class _QuantityControl extends StatelessWidget {
           ),
           Expanded(
             child: Text(
-              sale.formatQuantity(selectedQuantity),
+              sale.formatQuantity(context, selectedQuantity),
               textAlign: TextAlign.center,
               style: const TextStyle(fontWeight: FontWeight.w900),
             ),
@@ -879,7 +885,7 @@ class _BasketBar extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
           child: Text(
-            '$lines ${lines == 1 ? 'product' : 'products'} in basket',
+            '$lines ${localizeText(context, lines == 1 ? 'product in basket' : 'products in basket')}',
             style: const TextStyle(fontWeight: FontWeight.w800),
           ),
         ),
@@ -1034,7 +1040,7 @@ class _BasketSheetState extends State<_BasketSheet> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(sale.title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                                  Text(sale.titleFor(context), style: const TextStyle(fontWeight: FontWeight.w800)),
                                   Text(sale.farmName, style: const TextStyle(color: Colors.black54, fontSize: 12)),
                                 ],
                               ),
@@ -1095,7 +1101,7 @@ class _BasketSheetState extends State<_BasketSheet> {
               child: FilledButton(
                 onPressed: _submitting || _activeSales.isEmpty ? null : _requestOrder,
                 style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
-                child: Text(_submitting ? 'Sending request…' : 'Request order • €${_total.toStringAsFixed(2)}'),
+                child: Text(_submitting ? 'Sending request…' : '${localizeText(context, 'Request order')} • €${_total.toStringAsFixed(2)}'),
               ),
             ),
           ],
@@ -1167,7 +1173,7 @@ class _FarmSalesSheet extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          '${sales.length} Hot Sales • ${farm.distanceKm.toStringAsFixed(1)} km away',
+                          '${sales.length} ${localizeText(context, 'Hot Sales')} • ${farm.distanceKm.toStringAsFixed(1)} ${localizeText(context, 'km away')}',
                           style: const TextStyle(color: Colors.black54),
                         ),
                         if (farm.farmLocation.isNotEmpty)
@@ -1252,7 +1258,7 @@ class _SaleDetailsSheet extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        sale.title,
+                        sale.titleFor(context),
                         style: const TextStyle(
                           fontSize: 25,
                           fontWeight: FontWeight.w900,
@@ -1260,7 +1266,7 @@ class _SaleDetailsSheet extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      sale.price,
+                      sale.priceFor(context),
                       style: const TextStyle(
                         color: _green,
                         fontSize: 17,
@@ -1271,7 +1277,7 @@ class _SaleDetailsSheet extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '${sale.quantityLabel} available • ${sale.distanceKm.toStringAsFixed(1)} km away',
+                  '${sale.quantityLabelFor(context)} ${localizeText(context, 'available')} • ${sale.distanceKm.toStringAsFixed(1)} ${localizeText(context, 'km away')}',
                   style: const TextStyle(color: Colors.black54),
                 ),
                 const SizedBox(height: 14),
@@ -1284,20 +1290,58 @@ class _SaleDetailsSheet extends StatelessWidget {
                 if (selectedQuantity > 0) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Subtotal €${(selectedQuantity * sale.priceCents / 100).toStringAsFixed(2)}',
+                    '${localizeText(context, 'Subtotal')} €${(selectedQuantity * sale.priceCents / 100).toStringAsFixed(2)}',
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: _green, fontWeight: FontWeight.w900),
                   ),
                 ],
                 const SizedBox(height: 18),
-                Text(sale.description, style: const TextStyle(height: 1.5)),
-                if (sale.productionDetail?.isNotEmpty == true) ...[
+                Text(sale.descriptionFor(context), style: const TextStyle(height: 1.5)),
+                if (sale.productionDetailFor(context)?.isNotEmpty == true) ...[
                   const SizedBox(height: 14),
                   Text(
-                    sale.productionDetail!,
+                    sale.productionDetailFor(context)!,
                     style: const TextStyle(
                       color: Colors.black54,
                       fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+                if (sale.hasTranslationFor(context)) ...[
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F5EC),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFDCE8D6)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.translate_rounded, size: 18, color: _green),
+                            const SizedBox(width: 7),
+                            Expanded(
+                              child: Text(
+                                '${localizeText(context, 'Translated from')} ${sale.sourceLanguage.toUpperCase()}',
+                                style: const TextStyle(color: _green, fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(localizeText(context, 'Original'), style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 3),
+                        Text(sale.originalTitle, style: const TextStyle(fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 5),
+                        Text(sale.originalDescription, style: const TextStyle(height: 1.4)),
+                        if (sale.originalProductionDetail?.isNotEmpty == true) ...[
+                          const SizedBox(height: 5),
+                          Text(sale.originalProductionDetail!, style: const TextStyle(color: Colors.black54, fontStyle: FontStyle.italic)),
+                        ],
+                      ],
                     ),
                   ),
                 ],
@@ -1461,9 +1505,42 @@ class _NearbySale {
   final Map<String, dynamic> json;
   String get id => json['id'] as String;
   String get farmId => json['farmId'] as String;
-  String get title => json['originalTitle'] as String;
-  String get description => json['description'] as String;
-  String? get productionDetail => json['productionDetail'] as String?;
+  String get originalTitle => json['originalTitle'] as String;
+  String get originalDescription => json['description'] as String;
+  String? get originalProductionDetail => json['productionDetail'] as String?;
+  String get sourceLanguage =>
+      (json['detectedLanguage'] as String? ??
+              json['originalLanguage'] as String? ??
+              'en')
+          .toLowerCase();
+  Map<String, dynamic>? translationFor(String locale) {
+    for (final item in (json['translations'] as List<dynamic>? ?? const [])) {
+      final translation = item as Map<String, dynamic>;
+      if (translation['locale'] == locale &&
+          translation['status'] == 'COMPLETED') {
+        return translation;
+      }
+    }
+    return null;
+  }
+  String titleFor(BuildContext context) {
+    final locale = Localizations.localeOf(context).languageCode;
+    return translationFor(locale)?['title'] as String? ?? originalTitle;
+  }
+  String descriptionFor(BuildContext context) {
+    final locale = Localizations.localeOf(context).languageCode;
+    return translationFor(locale)?['description'] as String? ??
+        originalDescription;
+  }
+  String? productionDetailFor(BuildContext context) {
+    final locale = Localizations.localeOf(context).languageCode;
+    return translationFor(locale)?['productionDetail'] as String? ??
+        originalProductionDetail;
+  }
+  bool hasTranslationFor(BuildContext context) {
+    final locale = Localizations.localeOf(context).languageCode;
+    return locale != sourceLanguage && translationFor(locale) != null;
+  }
   String get farmName => json['farmName'] as String;
   String? get farmProfilePhotoUrl => json['farmProfilePhotoUrl'] as String?;
   String get farmLocation => [
@@ -1482,11 +1559,15 @@ class _NearbySale {
           .map((ring) => _RekoPickup(ring as Map<String, dynamic>))
           .toList();
   String get unit => (json['customUnit'] as String?) ?? (json['unit'] as String).toLowerCase();
+  String unitFor(BuildContext context) =>
+      json['customUnit'] as String? ?? localizeText(context, unit);
   Uint8List get imageBytes => base64Decode(json['imageBase64'] as String);
-  String get price => '€${(priceCents / 100).toStringAsFixed(2)} / $unit';
-  String get quantityLabel => '${quantity.toStringAsFixed(quantity % 1 == 0 ? 0 : 1)} $unit';
-  String formatQuantity(double value) =>
-      '${value.toStringAsFixed(value % 1 == 0 ? 0 : 2)} $unit';
+  String priceFor(BuildContext context) =>
+      '€${(priceCents / 100).toStringAsFixed(2)} / ${unitFor(context)}';
+  String quantityLabelFor(BuildContext context) =>
+      '${quantity.toStringAsFixed(quantity % 1 == 0 ? 0 : 1)} ${unitFor(context)}';
+  String formatQuantity(BuildContext context, double value) =>
+      '${value.toStringAsFixed(value % 1 == 0 ? 0 : 2)} ${unitFor(context)}';
 }
 
 class _RekoPickup {
