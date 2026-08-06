@@ -63,6 +63,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
             productionDetail producedAt availableAtFarm
             translations { locale title description productionDetail status }
             imageMimeType imageBase64 farmId farmName farmProfilePhotoUrl
+            farmOwnerId farmCoverPhotoUrl farmDescription followerCount isFollowed
             latitude longitude farmAddress farmCity distanceKm
             rekoRings { id name municipality regionName addressLine postalCode
               schedule { frequency weekday startTime endTime timezone }
@@ -211,6 +212,22 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
     );
   }
 
+  Future<void> _openPublicFarm(List<_NearbySale> sales) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder:
+            (_) => _PublicFarmPage(
+              sales: sales,
+              quantityFor: _basketQuantity,
+              onAdd: (sale) => _changeBasket(sale, sale.quantityStep),
+              onRemove: (sale) => _changeBasket(sale, -sale.quantityStep),
+              onDetails: _showSaleDetails,
+            ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   void _toggleFarmTile(List<_NearbySale> sales) {
     if (_showFarmTile) {
       setState(() => _showFarmTile = false);
@@ -297,6 +314,10 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
                 child: _FarmProductCarousel(
                   sales: _selectedFarmSales,
                   onDetails: _showSaleDetails,
+                  quantityFor: _basketQuantity,
+                  onAdd: (sale) => _changeBasket(sale, sale.quantityStep),
+                  onRemove: (sale) => _changeBasket(sale, -sale.quantityStep),
+                  onOpenFarm: () => _openPublicFarm(_selectedFarmSales),
                 ),
               ),
             if (activeFarmId != null && activeBasketSales.isNotEmpty)
@@ -665,15 +686,23 @@ class _FarmProductCarousel extends StatelessWidget {
   const _FarmProductCarousel({
     required this.sales,
     required this.onDetails,
+    required this.quantityFor,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onOpenFarm,
   });
   final List<_NearbySale> sales;
   final ValueChanged<_NearbySale> onDetails;
+  final double Function(_NearbySale) quantityFor;
+  final ValueChanged<_NearbySale> onAdd;
+  final ValueChanged<_NearbySale> onRemove;
+  final VoidCallback onOpenFarm;
 
   @override
   Widget build(BuildContext context) {
     final farm = sales.first;
     return Container(
-      height: 218,
+      height: 246,
       margin: const EdgeInsets.symmetric(horizontal: 14),
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
       decoration: BoxDecoration(
@@ -685,8 +714,11 @@ class _FarmProductCarousel extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Row(
-            children: [
+          InkWell(
+            onTap: onOpenFarm,
+            borderRadius: BorderRadius.circular(16),
+            child: Row(
+              children: [
               CircleAvatar(
                 radius: 23,
                 backgroundColor: const Color(0xFFE5EFDF),
@@ -723,8 +755,9 @@ class _FarmProductCarousel extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.swipe_rounded, color: _green),
-            ],
+                const Icon(Icons.chevron_right_rounded, color: _green),
+              ],
+            ),
           ),
           const SizedBox(height: 11),
           Expanded(
@@ -736,6 +769,9 @@ class _FarmProductCarousel extends StatelessWidget {
                   (_, index) => _MapProductCard(
                     sale: sales[index],
                     onDetails: () => onDetails(sales[index]),
+                    selectedQuantity: quantityFor(sales[index]),
+                    onAdd: () => onAdd(sales[index]),
+                    onRemove: () => onRemove(sales[index]),
                   ),
             ),
           ),
@@ -749,9 +785,15 @@ class _MapProductCard extends StatelessWidget {
   const _MapProductCard({
     required this.sale,
     required this.onDetails,
+    required this.selectedQuantity,
+    required this.onAdd,
+    required this.onRemove,
   });
   final _NearbySale sale;
   final VoidCallback onDetails;
+  final double selectedQuantity;
+  final VoidCallback onAdd;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) => InkWell(
@@ -798,6 +840,16 @@ class _MapProductCard extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 5),
+          SizedBox(
+            height: 42,
+            child: _QuantityControl(
+              sale: sale,
+              selectedQuantity: selectedQuantity,
+              onAdd: onAdd,
+              onRemove: onRemove,
+            ),
           ),
         ],
       ),
@@ -1209,6 +1261,153 @@ class _FarmSalesSheet extends StatelessWidget {
   }
 }
 
+class _PublicFarmPage extends StatefulWidget {
+  const _PublicFarmPage({
+    required this.sales,
+    required this.quantityFor,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onDetails,
+  });
+  final List<_NearbySale> sales;
+  final double Function(_NearbySale) quantityFor;
+  final ValueChanged<_NearbySale> onAdd;
+  final ValueChanged<_NearbySale> onRemove;
+  final ValueChanged<_NearbySale> onDetails;
+
+  @override
+  State<_PublicFarmPage> createState() => _PublicFarmPageState();
+}
+
+class _PublicFarmPageState extends State<_PublicFarmPage> {
+  late bool _followed = widget.sales.first.isFollowed;
+  late int _followers = widget.sales.first.followerCount;
+  bool _busy = false;
+
+  Future<void> _toggleFollow() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (token == null) throw StateError('Please sign in again.');
+      final dio = Dio(BaseOptions(baseUrl: const String.fromEnvironment('FRSH_API_URL', defaultValue: 'https://frshnearby-api.onrender.com/graphql')));
+      final response = await dio.post<Map<String, dynamic>>(
+        '',
+        data: {
+          'query': 'mutation(\$farmId: String!) { toggleFarmFollow(farmId: \$farmId) { followed followerCount } }',
+          'variables': {'farmId': widget.sales.first.farmId},
+        },
+        options: Options(headers: {'authorization': 'Bearer $token'}),
+      );
+      final body = response.data ?? const {};
+      final errors = body['errors'] as List<dynamic>?;
+      if (errors?.isNotEmpty == true) throw StateError((errors!.first as Map<String, dynamic>)['message'] as String? ?? 'Could not update follow.');
+      final state = (body['data'] as Map<String, dynamic>)['toggleFarmFollow'] as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() {
+        _followed = state['followed'] as bool;
+        _followers = state['followerCount'] as int;
+        for (final sale in widget.sales) {
+          sale.json['isFollowed'] = _followed;
+          sale.json['followerCount'] = _followers;
+        }
+      });
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final farm = widget.sales.first;
+    return Scaffold(
+      backgroundColor: _cream,
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 245,
+            pinned: true,
+            backgroundColor: _green,
+            foregroundColor: Colors.white,
+            flexibleSpace: FlexibleSpaceBar(
+              background:
+                  farm.farmCoverPhotoUrl?.isNotEmpty == true
+                      ? Image.network(farm.farmCoverPhotoUrl!, fit: BoxFit.cover)
+                      : Image.asset('assets/images/role_producer.jpg', fit: BoxFit.cover),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 34,
+                        backgroundColor: const Color(0xFFE5EFDF),
+                        backgroundImage: farm.farmProfilePhotoUrl?.isNotEmpty == true ? NetworkImage(farm.farmProfilePhotoUrl!) : null,
+                        child: farm.farmProfilePhotoUrl?.isNotEmpty == true ? null : Text(farm.farmName.characters.first.toUpperCase(), style: const TextStyle(color: _green, fontSize: 24, fontWeight: FontWeight.w900)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(farm.farmName, style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
+                        Text('$_followers ${localizeText(context, _followers == 1 ? 'follower' : 'followers')}', style: const TextStyle(color: Colors.black54)),
+                      ])),
+                      FilledButton.icon(
+                        onPressed: _busy ? null : _toggleFollow,
+                        icon: Icon(_followed ? Icons.check_rounded : Icons.add_rounded),
+                        label: Text(_followed ? 'Following' : 'Follow'),
+                      ),
+                    ],
+                  ),
+                  if (farm.farmDescription?.isNotEmpty == true) ...[
+                    const SizedBox(height: 16),
+                    Text(farm.farmDescription!, style: const TextStyle(height: 1.5)),
+                  ],
+                  const SizedBox(height: 22),
+                  Text('${widget.sales.length} ${localizeText(context, 'Hot Sales')}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                ],
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, childAspectRatio: .68, crossAxisSpacing: 12, mainAxisSpacing: 12),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final sale = widget.sales[index];
+                  return Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    clipBehavior: Clip.antiAlias,
+                    child: Padding(
+                      padding: const EdgeInsets.all(9),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Expanded(child: InkWell(onTap: () => widget.onDetails(sale), child: ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.memory(sale.imageBytes, width: double.infinity, fit: BoxFit.cover)))),
+                        const SizedBox(height: 7),
+                        Text(sale.titleFor(context), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900)),
+                        Text(sale.priceFor(context), style: const TextStyle(color: _green, fontSize: 12, fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 6),
+                        _QuantityControl(sale: sale, selectedQuantity: widget.quantityFor(sale), onAdd: () { widget.onAdd(sale); setState(() {}); }, onRemove: () { widget.onRemove(sale); setState(() {}); }),
+                      ]),
+                    ),
+                  );
+                },
+                childCount: widget.sales.length,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SaleDetailsSheet extends StatelessWidget {
   const _SaleDetailsSheet({
     required this.sale,
@@ -1505,6 +1704,7 @@ class _NearbySale {
   final Map<String, dynamic> json;
   String get id => json['id'] as String;
   String get farmId => json['farmId'] as String;
+  String get farmOwnerId => json['farmOwnerId'] as String;
   String get originalTitle => json['originalTitle'] as String;
   String get originalDescription => json['description'] as String;
   String? get originalProductionDetail => json['productionDetail'] as String?;
@@ -1543,6 +1743,10 @@ class _NearbySale {
   }
   String get farmName => json['farmName'] as String;
   String? get farmProfilePhotoUrl => json['farmProfilePhotoUrl'] as String?;
+  String? get farmCoverPhotoUrl => json['farmCoverPhotoUrl'] as String?;
+  String? get farmDescription => json['farmDescription'] as String?;
+  int get followerCount => (json['followerCount'] as num?)?.toInt() ?? 0;
+  bool get isFollowed => json['isFollowed'] as bool? ?? false;
   String get farmLocation => [
     json['farmAddress'] as String?,
     json['farmCity'] as String?,

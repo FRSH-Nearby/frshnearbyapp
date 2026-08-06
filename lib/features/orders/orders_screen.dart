@@ -19,6 +19,7 @@ class OrdersScreen extends StatefulWidget {
 
 class _OrdersScreenState extends State<OrdersScreen> {
   late Future<List<_Order>> _orders = _load();
+  late Future<List<Map<String, dynamic>>> _notifications = _loadNotifications();
 
   Future<Map<String, dynamic>> _send(String query, [Map<String, dynamic> variables = const {}]) async {
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
@@ -36,6 +37,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final name = widget.seller ? 'sellerOrders' : 'myOrders';
     final data = await _send('query { $name { $fields } }');
     return (data[name] as List<dynamic>).map((item) => _Order(item as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadNotifications() async {
+    if (!widget.seller) return const [];
+    final data = await _send('query { farmNotifications { id type message actorName read createdAt } }');
+    return (data['farmNotifications'] as List<dynamic>).cast<Map<String, dynamic>>();
+  }
+
+  Future<void> _readNotification(String id) async {
+    await _send('mutation(\$id: String!) { markFarmNotificationRead(id: \$id) }', {'id': id});
+    if (mounted) setState(() => _notifications = _loadNotifications());
   }
 
   Future<void> _status(_Order order, String status) async {
@@ -70,6 +82,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 const SizedBox(height: 6),
                 Text(widget.seller ? 'Review and prepare customer requests.' : 'Track requests and pickup details.', style: const TextStyle(color: Colors.black54)),
                 const SizedBox(height: 18),
+                if (widget.seller)
+                  FutureBuilder<List<Map<String, dynamic>>>(
+                    future: _notifications,
+                    builder: (context, noticeSnapshot) {
+                      final notices = noticeSnapshot.data ?? const [];
+                      if (notices.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Notifications', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                          const SizedBox(height: 8),
+                          for (final notice in notices.take(5))
+                            ListTile(
+                              onTap: notice['read'] == true ? null : () => _readNotification(notice['id'] as String),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                              tileColor: notice['read'] == true ? Colors.white : const Color(0xFFE6F0E1),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                              leading: const Icon(Icons.person_add_alt_1_rounded, color: _green),
+                              title: Text(notice['message'] as String),
+                              subtitle: Text(notice['actorName'] as String),
+                              trailing: notice['read'] == true ? null : const Icon(Icons.circle, size: 9, color: _green),
+                            ),
+                          const SizedBox(height: 18),
+                        ],
+                      );
+                    },
+                  ),
                 if (orders.isEmpty)
                   const Padding(padding: EdgeInsets.only(top: 80), child: Column(children: [Icon(Icons.receipt_long_outlined, size: 44, color: _green), SizedBox(height: 12), Text('No orders yet', style: TextStyle(fontWeight: FontWeight.w800))])),
                 for (final order in orders)
