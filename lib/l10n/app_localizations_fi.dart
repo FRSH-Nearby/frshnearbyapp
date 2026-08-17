@@ -93,7 +93,8 @@ class AppLocalizationsFi extends AppLocalizations {
   String get authLoginAction => 'Kirjaudu';
 
   @override
-  String get authTerms => 'Luomalla tilin hyväksyt käyttöehdot ja tietosuojakäytännön.';
+  String get authTerms =>
+      'Luomalla tilin hyväksyt käyttöehdot ja tietosuojakäytännön.';
 
   @override
   String get authNameError => 'Kirjoita nimesi.';
@@ -108,13 +109,15 @@ class AppLocalizationsFi extends AppLocalizations {
   String get authAgeError => 'Vahvista, että olet vähintään 18-vuotias.';
 
   @override
-  String get authDemoMessage => 'Kaikki näyttää hyvältä! Tunnistautuminen yhdistetään seuraavaksi.';
+  String get authDemoMessage =>
+      'Kaikki näyttää hyvältä! Tunnistautuminen yhdistetään seuraavaksi.';
 
   @override
   String get authSimpleTitle => 'Tuoretta ruokaa läheltä';
 
   @override
-  String get authSimpleSubtitle => 'Kirjaudu tai luo tili muutamalla napautuksella.';
+  String get authSimpleSubtitle =>
+      'Kirjaudu tai luo tili muutamalla napautuksella.';
 
   @override
   String get authContinueGoogle => 'Jatka Googlella';
@@ -126,13 +129,15 @@ class AppLocalizationsFi extends AppLocalizations {
   String get authContinueFacebook => 'Jatka Facebookilla';
 
   @override
-  String get authSocialHint => 'Oletko jo rekisteröitynyt? Kirjaamme sinut sisään. Uusi käyttäjä? Autamme viimeistelemään tilin.';
+  String get authSocialHint =>
+      'Oletko jo rekisteröitynyt? Kirjaamme sinut sisään. Uusi käyttäjä? Autamme viimeistelemään tilin.';
 
   @override
   String get authConfirmDetails => 'Vahvista tietosi';
 
   @override
-  String get authConfirmDetailsHint => 'Täytimme tililtä saadut tiedot valmiiksi.';
+  String get authConfirmDetailsHint =>
+      'Täytimme tililtä saadut tiedot valmiiksi.';
 
   @override
   String get authPhotoOptional => 'Profiilikuva · valinnainen';
@@ -159,10 +164,12 @@ class AppLocalizationsFi extends AppLocalizations {
   String get authRoleHint => 'Valitse nyt yksi. Voit vaihtaa myöhemmin.';
 
   @override
-  String get authConsumerMessage => 'Löydä tuoretta ruokaa ja luotettavia tuottajia läheltäsi.';
+  String get authConsumerMessage =>
+      'Löydä tuoretta ruokaa ja luotettavia tuottajia läheltäsi.';
 
   @override
-  String get authProducerMessage => 'Jaa ruokasi paikallisesti. Tuottajaprofiili tarkistetaan ennen julkaisua.';
+  String get authProducerMessage =>
+      'Jaa ruokasi paikallisesti. Tuottajaprofiili tarkistetaan ennen julkaisua.';
 
   @override
   String get authAlmostDone => 'Melkein valmista';
@@ -183,7 +190,8 @@ class AppLocalizationsFi extends AppLocalizations {
   String get authWelcomeReady => 'Kaikki valmista!';
 
   @override
-  String get authVerificationPending => 'Profiilisi on luotu. Tuottajan vahvistaminen voi viedä hetken.';
+  String get authVerificationPending =>
+      'Profiilisi on luotu. Tuottajan vahvistaminen voi viedä hetken.';
 
   @override
   String get authEnterApp => 'Avaa FRSH nearby';

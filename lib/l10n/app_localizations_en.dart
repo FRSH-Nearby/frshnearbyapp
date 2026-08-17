@@ -93,7 +93,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authLoginAction => 'Log in';
 
   @override
-  String get authTerms => 'By creating an account, you agree to our Terms and Privacy Policy.';
+  String get authTerms =>
+      'By creating an account, you agree to our Terms and Privacy Policy.';
 
   @override
   String get authNameError => 'Enter your name.';
@@ -108,13 +109,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authAgeError => 'Please confirm that you are at least 18.';
 
   @override
-  String get authDemoMessage => 'Looks good! Authentication will be connected next.';
+  String get authDemoMessage =>
+      'Looks good! Authentication will be connected next.';
 
   @override
   String get authSimpleTitle => 'Fresh food near you';
 
   @override
-  String get authSimpleSubtitle => 'Sign in or create your account in a few taps.';
+  String get authSimpleSubtitle =>
+      'Sign in or create your account in a few taps.';
 
   @override
   String get authContinueGoogle => 'Continue with Google';
@@ -126,7 +129,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authContinueFacebook => 'Continue with Facebook';
 
   @override
-  String get authSocialHint => 'Already registered? We\'ll log you in. New here? We\'ll help you finish signing up.';
+  String get authSocialHint =>
+      'Already registered? We\'ll log you in. New here? We\'ll help you finish signing up.';
 
   @override
   String get authConfirmDetails => 'Confirm your details';
@@ -159,10 +163,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authRoleHint => 'Choose one for now. You can switch later.';
 
   @override
-  String get authConsumerMessage => 'Find fresh food and trusted producers close to you.';
+  String get authConsumerMessage =>
+      'Find fresh food and trusted producers close to you.';
 
   @override
-  String get authProducerMessage => 'Share your food locally. Your producer profile will be reviewed before publishing.';
+  String get authProducerMessage =>
+      'Share your food locally. Your producer profile will be reviewed before publishing.';
 
   @override
   String get authAlmostDone => 'Almost done';
@@ -183,7 +189,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authWelcomeReady => 'You\'re ready!';
 
   @override
-  String get authVerificationPending => 'Your profile is created. Producer verification may take a little time.';
+  String get authVerificationPending =>
+      'Your profile is created. Producer verification may take a little time.';
 
   @override
   String get authEnterApp => 'Enter FRSH nearby';

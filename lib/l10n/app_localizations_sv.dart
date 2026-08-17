@@ -93,7 +93,8 @@ class AppLocalizationsSv extends AppLocalizations {
   String get authLoginAction => 'Logga in';
 
   @override
-  String get authTerms => 'Genom att skapa ett konto godkänner du våra villkor och vår integritetspolicy.';
+  String get authTerms =>
+      'Genom att skapa ett konto godkänner du våra villkor och vår integritetspolicy.';
 
   @override
   String get authNameError => 'Ange ditt namn.';
@@ -108,13 +109,15 @@ class AppLocalizationsSv extends AppLocalizations {
   String get authAgeError => 'Bekräfta att du är minst 18 år.';
 
   @override
-  String get authDemoMessage => 'Allt ser bra ut! Autentisering ansluts härnäst.';
+  String get authDemoMessage =>
+      'Allt ser bra ut! Autentisering ansluts härnäst.';
 
   @override
   String get authSimpleTitle => 'Färsk mat nära dig';
 
   @override
-  String get authSimpleSubtitle => 'Logga in eller skapa ditt konto med några tryck.';
+  String get authSimpleSubtitle =>
+      'Logga in eller skapa ditt konto med några tryck.';
 
   @override
   String get authContinueGoogle => 'Fortsätt med Google';
@@ -126,7 +129,8 @@ class AppLocalizationsSv extends AppLocalizations {
   String get authContinueFacebook => 'Fortsätt med Facebook';
 
   @override
-  String get authSocialHint => 'Redan registrerad? Vi loggar in dig. Ny här? Vi hjälper dig slutföra kontot.';
+  String get authSocialHint =>
+      'Redan registrerad? Vi loggar in dig. Ny här? Vi hjälper dig slutföra kontot.';
 
   @override
   String get authConfirmDetails => 'Bekräfta dina uppgifter';
@@ -159,16 +163,19 @@ class AppLocalizationsSv extends AppLocalizations {
   String get authRoleHint => 'Välj en nu. Du kan byta senare.';
 
   @override
-  String get authConsumerMessage => 'Hitta färsk mat och pålitliga producenter nära dig.';
+  String get authConsumerMessage =>
+      'Hitta färsk mat och pålitliga producenter nära dig.';
 
   @override
-  String get authProducerMessage => 'Dela din mat lokalt. Producentprofilen granskas före publicering.';
+  String get authProducerMessage =>
+      'Dela din mat lokalt. Producentprofilen granskas före publicering.';
 
   @override
   String get authAlmostDone => 'Nästan klart';
 
   @override
-  String get authAlmostDoneHint => 'Kontrollera inställningarna och skapa din profil.';
+  String get authAlmostDoneHint =>
+      'Kontrollera inställningarna och skapa din profil.';
 
   @override
   String get authDetailsConfirmed => 'Personuppgifter bekräftade';
@@ -183,7 +190,8 @@ class AppLocalizationsSv extends AppLocalizations {
   String get authWelcomeReady => 'Du är redo!';
 
   @override
-  String get authVerificationPending => 'Din profil är skapad. Producentverifiering kan ta lite tid.';
+  String get authVerificationPending =>
+      'Din profil är skapad. Producentverifiering kan ta lite tid.';
 
   @override
   String get authEnterApp => 'Öppna FRSH nearby';
