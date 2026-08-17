@@ -413,6 +413,11 @@ class _SalesMap extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(40, 100, 40, 40),
             maxZoom: 18,
             zoomToBoundsOnClick: true,
+            // _FarmMarker owns its own tap handling (avatar vs. product
+            // peeks). Without this, the plugin wraps every individual pin
+            // in its own opaque GestureDetector that fights ours, so the
+            // first tap can appear to both focus AND open the sheet.
+            markerChildBehavior: true,
             markers:
                 farms.values
                     .map(
