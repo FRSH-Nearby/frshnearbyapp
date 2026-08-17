@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart' hide Text;
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -378,24 +379,44 @@ class _SalesMap extends StatelessWidget {
               height: 28,
               child: const _UserMarker(),
             ),
-            ...farms.values.map(
-              (farmSales) => Marker(
-                point: LatLng(
-                  farmSales.first.latitude,
-                  farmSales.first.longitude,
-                ),
-                width: 112,
-                height: 82,
-                alignment: Alignment.bottomCenter,
-                child: _FarmMarker(
-                  sales: farmSales,
-                  selected: farmSales.any((sale) => sale.id == selectedId),
-                  onTap: () => onFarmSelect(farmSales),
-                  onProductTap: onProductSelect,
-                ),
-              ),
-            ),
           ],
+        ),
+        MarkerClusterLayerWidget(
+          options: MarkerClusterLayerOptions(
+            // Farm pins render as a 54-60px circle; a ~34px pixel radius
+            // groups pins once they'd overlap by roughly half or more.
+            maxClusterRadius: 34,
+            size: const Size(60, 70),
+            alignment: Alignment.bottomCenter,
+            padding: const EdgeInsets.fromLTRB(40, 100, 40, 40),
+            maxZoom: 18,
+            zoomToBoundsOnClick: true,
+            markers:
+                farms.values
+                    .map(
+                      (farmSales) => Marker(
+                        point: LatLng(
+                          farmSales.first.latitude,
+                          farmSales.first.longitude,
+                        ),
+                        width: 112,
+                        height: 82,
+                        alignment: Alignment.bottomCenter,
+                        child: _FarmMarker(
+                          sales: farmSales,
+                          selected: farmSales.any(
+                            (sale) => sale.id == selectedId,
+                          ),
+                          onTap: () => onFarmSelect(farmSales),
+                          onProductTap: onProductSelect,
+                        ),
+                      ),
+                    )
+                    .toList(),
+            builder:
+                (context, markers) =>
+                    _FarmClusterMarker(count: markers.length),
+          ),
         ),
       ],
     );
@@ -672,6 +693,46 @@ class _FarmMarker extends StatelessWidget {
       ),
     );
   }
+}
+
+class _FarmClusterMarker extends StatelessWidget {
+  const _FarmClusterMarker({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 60,
+        height: 60,
+        alignment: Alignment.center,
+        decoration: const BoxDecoration(
+          color: _green,
+          shape: BoxShape.circle,
+          border: Border.fromBorderSide(
+            BorderSide(color: Colors.white, width: 3),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black38,
+              blurRadius: 10,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Text(
+          '$count',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+      Container(width: 3, height: 10, color: _green),
+    ],
+  );
 }
 
 class _UserMarker extends StatelessWidget {
