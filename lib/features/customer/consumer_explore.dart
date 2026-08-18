@@ -32,7 +32,6 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
   bool _locating = false;
   bool _showFarmTile = false;
   String? _selectedId;
-  String? _focusedFarmId;
   List<_NearbySale> _selectedFarmSales = const [];
   List<_NearbySale> _knownSales = const [];
   final Map<String, Map<String, double>> _farmBaskets = {};
@@ -207,29 +206,11 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
       _selectedId = sales.first.id;
       _selectedFarmSales = sales;
       _showFarmTile = true;
-      _focusedFarmId = null;
     });
     _mapController.move(
       LatLng(sales.first.latitude, sales.first.longitude),
       15.5,
     );
-  }
-
-  // A farm pin can visually bundle several overlapping circles (the farm
-  // avatar plus product peeks), so a single tap is ambiguous about which
-  // one the user meant. The first tap just zooms/centers on that farm;
-  // only a second tap on the now-focused farm opens its product sheet.
-  void _handleFarmTap(List<_NearbySale> sales) {
-    final farmId = sales.first.farmId;
-    if (_focusedFarmId != farmId) {
-      setState(() => _focusedFarmId = farmId);
-      _mapController.move(
-        LatLng(sales.first.latitude, sales.first.longitude),
-        15.5,
-      );
-      return;
-    }
-    _openFarmSales(sales);
   }
 
   Future<void> _openPublicFarm(List<_NearbySale> sales) async {
@@ -297,8 +278,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
                 position: _position,
                 sales: sales,
                 selectedId: _selectedId,
-                focusedFarmId: _focusedFarmId,
-                onFarmSelect: _handleFarmTap,
+                onFarmSelect: _openFarmSales,
                 onProductSelect: _showSaleDetails,
               ),
             ),
@@ -365,7 +345,6 @@ class _SalesMap extends StatelessWidget {
     required this.position,
     required this.sales,
     required this.selectedId,
-    required this.focusedFarmId,
     required this.onFarmSelect,
     required this.onProductSelect,
   });
@@ -374,7 +353,6 @@ class _SalesMap extends StatelessWidget {
   final LatLng position;
   final List<_NearbySale> sales;
   final String? selectedId;
-  final String? focusedFarmId;
   final ValueChanged<List<_NearbySale>> onFarmSelect;
   final ValueChanged<_NearbySale> onProductSelect;
 
@@ -415,8 +393,7 @@ class _SalesMap extends StatelessWidget {
             zoomToBoundsOnClick: true,
             // _FarmMarker owns its own tap handling (avatar vs. product
             // peeks). Without this, the plugin wraps every individual pin
-            // in its own opaque GestureDetector that fights ours, so the
-            // first tap can appear to both focus AND open the sheet.
+            // in its own opaque GestureDetector that fights ours.
             markerChildBehavior: true,
             markers:
                 farms.values
@@ -431,9 +408,9 @@ class _SalesMap extends StatelessWidget {
                         alignment: Alignment.bottomCenter,
                         child: _FarmMarker(
                           sales: farmSales,
-                          selected:
-                              farmSales.first.farmId == focusedFarmId ||
-                              farmSales.any((sale) => sale.id == selectedId),
+                          selected: farmSales.any(
+                            (sale) => sale.id == selectedId,
+                          ),
                           onTap: () => onFarmSelect(farmSales),
                           onProductTap: onProductSelect,
                         ),
