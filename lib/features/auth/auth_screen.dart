@@ -14,6 +14,7 @@ import 'package:image_picker/image_picker.dart';
 import '../notifications/push_notification_service.dart';
 import '../hot_sales/hot_sales.dart';
 import '../customer/consumer_explore.dart';
+import '../customer/consumer_home.dart';
 import '../orders/orders_screen.dart';
 
 import 'auth_service.dart';
@@ -2756,6 +2757,16 @@ class _MainAppShellState extends State<_MainAppShell> {
               if (widget.location == null)
                 const _FutureTab(
                   icon: Icons.location_off_outlined,
+                  title: 'Confirm your location to see your home feed',
+                )
+              else
+                ConsumerHomePage(
+                  location: widget.location!,
+                  onOpenExplore: () => setState(() => _index = 1),
+                ),
+              if (widget.location == null)
+                const _FutureTab(
+                  icon: Icons.location_off_outlined,
                   title: 'Confirm your location to explore nearby Hot Sales',
                 )
               else
@@ -2808,6 +2819,11 @@ class _MainAppShellState extends State<_MainAppShell> {
     final destinations =
         isConsumerMode
             ? [
+              NavigationDestination(
+                icon: const Icon(Icons.home_outlined),
+                selectedIcon: const Icon(Icons.home_rounded),
+                label: localizeText(context, 'Home'),
+              ),
               NavigationDestination(
                 icon: const Icon(Icons.map_outlined),
                 selectedIcon: const Icon(Icons.map_rounded),
@@ -2892,358 +2908,6 @@ class _MainAppShellState extends State<_MainAppShell> {
       ),
     );
   }
-}
-
-// ignore: unused_element
-class _ConsumerDashboardPage extends StatefulWidget {
-  const _ConsumerDashboardPage({required this.fullName});
-  final String fullName;
-
-  @override
-  State<_ConsumerDashboardPage> createState() =>
-      _ConsumerDashboardPageState();
-}
-
-class _ConsumerDashboardPageState extends State<_ConsumerDashboardPage> {
-  static const _farms = [
-    _FeaturedFarm(
-      id: 'green-meadow',
-      name: 'Green Meadow Farm',
-      location: 'Espoo, Finland',
-      description: 'Seasonal vegetables, herbs and free-range eggs.',
-      image: 'assets/images/role_producer.jpg',
-      followerCount: 28,
-    ),
-    _FeaturedFarm(
-      id: 'sunrise-bakery',
-      name: 'Sunrise Farm Bakery',
-      location: 'Helsinki, Finland',
-      description: 'Small-batch sourdough and locally milled grains.',
-      image: 'assets/images/role_business.jpg',
-      followerCount: 41,
-    ),
-  ];
-
-  final _preferences = AppPreferencesStore();
-  Set<String> _followedFarmIds = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFollowedFarms();
-  }
-
-  Future<void> _loadFollowedFarms() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final followed = await _preferences.followedFarms(uid);
-    if (mounted) setState(() => _followedFarmIds = followed);
-  }
-
-  Future<void> _toggleFollow(_FeaturedFarm farm) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final followed = !_followedFarmIds.contains(farm.id);
-    setState(() {
-      followed
-          ? _followedFarmIds.add(farm.id)
-          : _followedFarmIds.remove(farm.id);
-    });
-    await _preferences.setFarmFollowed(uid, farm.id, followed: followed);
-  }
-
-  Future<void> _openFarm(_FeaturedFarm farm) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder:
-            (_) => _PublicFarmProfilePage(
-              farm: farm,
-              initiallyFollowed: _followedFarmIds.contains(farm.id),
-              onToggleFollow: () => _toggleFollow(farm),
-            ),
-      ),
-    );
-    if (mounted) setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final firstName =
-        widget.fullName.trim().isEmpty
-            ? 'there'
-            : widget.fullName.trim().split(' ').first;
-    return ColoredBox(
-      color: const Color(0xFFFFFAF0),
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 22, 18, 30),
-          children: [
-            Text(
-              'Hello, $firstName',
-              style: const TextStyle(
-                color: _muted,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Fresh food near you',
-              style: GoogleFonts.fraunces(
-                fontSize: 34,
-                height: 1.05,
-                fontWeight: FontWeight.w700,
-                color: _ink,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(22),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF194D35), Color(0xFF2E7350)],
-                ),
-                borderRadius: BorderRadius.circular(26),
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.location_on_outlined, color: Color(0xFFFFD979)),
-                  SizedBox(height: 22),
-                  Text(
-                    'Discover local producers',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    'Seasonal food and small businesses, close to home.',
-                    style: TextStyle(color: Color(0xFFDDEAE3), height: 1.4),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text('Browse by category', style: _title),
-            const SizedBox(height: 12),
-            const Wrap(
-              spacing: 9,
-              runSpacing: 9,
-              children: [
-                _CategoryChip(icon: Icons.eco_outlined, label: 'Vegetables'),
-                _CategoryChip(
-                  icon: Icons.bakery_dining_outlined,
-                  label: 'Bakery',
-                ),
-                _CategoryChip(icon: Icons.egg_outlined, label: 'Eggs & dairy'),
-              ],
-            ),
-            const SizedBox(height: 26),
-            Text('Nearby farmers', style: _title),
-            const SizedBox(height: 12),
-            ..._farms.map(
-              (farm) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _FarmPreviewCard(
-                  farm: farm,
-                  followed: _followedFarmIds.contains(farm.id),
-                  onTap: () => _openFarm(farm),
-                  onFollow: () => _toggleFollow(farm),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FeaturedFarm {
-  const _FeaturedFarm({
-    required this.id,
-    required this.name,
-    required this.location,
-    required this.description,
-    required this.image,
-    required this.followerCount,
-  });
-
-  final String id;
-  final String name;
-  final String location;
-  final String description;
-  final String image;
-  final int followerCount;
-}
-
-class _FarmPreviewCard extends StatelessWidget {
-  const _FarmPreviewCard({
-    required this.farm,
-    required this.followed,
-    required this.onTap,
-    required this.onFollow,
-  });
-
-  final _FeaturedFarm farm;
-  final bool followed;
-  final VoidCallback onTap;
-  final VoidCallback onFollow;
-
-  @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(22),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(22),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Image.asset(
-                farm.image,
-                width: 84,
-                height: 84,
-                fit: BoxFit.cover,
-              ),
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    farm.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    farm.location,
-                    style: const TextStyle(color: _muted, fontSize: 12.5),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${farm.followerCount + (followed ? 1 : 0)} followers',
-                    style: const TextStyle(
-                      color: _green,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              tooltip: followed ? 'Unfollow' : 'Follow',
-              onPressed: onFollow,
-              icon: Icon(
-                followed ? Icons.favorite_rounded : Icons.favorite_border,
-                color: followed ? _green : _muted,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _PublicFarmProfilePage extends StatefulWidget {
-  const _PublicFarmProfilePage({
-    required this.farm,
-    required this.initiallyFollowed,
-    required this.onToggleFollow,
-  });
-
-  final _FeaturedFarm farm;
-  final bool initiallyFollowed;
-  final Future<void> Function() onToggleFollow;
-
-  @override
-  State<_PublicFarmProfilePage> createState() =>
-      _PublicFarmProfilePageState();
-}
-
-class _PublicFarmProfilePageState extends State<_PublicFarmProfilePage> {
-  late bool _followed = widget.initiallyFollowed;
-  bool _busy = false;
-
-  Future<void> _toggleFollow() async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    await widget.onToggleFollow();
-    if (mounted) {
-      setState(() {
-        _followed = !_followed;
-        _busy = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: _cream,
-    appBar: AppBar(
-      backgroundColor: _cream,
-      surfaceTintColor: Colors.transparent,
-      title: const Text('Farm profile'),
-    ),
-    body: ListView(
-      padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(28),
-          child: Image.asset(
-            widget.farm.image,
-            height: 220,
-            width: double.infinity,
-            fit: BoxFit.cover,
-          ),
-        ),
-        const SizedBox(height: 20),
-        Text(
-          widget.farm.name,
-          style: GoogleFonts.fraunces(
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            const Icon(Icons.location_on_outlined, size: 18, color: _muted),
-            const SizedBox(width: 5),
-            Text(widget.farm.location, style: const TextStyle(color: _muted)),
-          ],
-        ),
-        const SizedBox(height: 14),
-        Text(widget.farm.description, style: const TextStyle(height: 1.5)),
-        const SizedBox(height: 18),
-        Text(
-          '${widget.farm.followerCount + (_followed ? 1 : 0)} followers',
-          style: const TextStyle(fontWeight: FontWeight.w700, color: _green),
-        ),
-        const SizedBox(height: 14),
-        FilledButton.icon(
-          onPressed: _busy ? null : _toggleFollow,
-          icon: Icon(
-            _followed ? Icons.check_rounded : Icons.add_rounded,
-          ),
-          label: Text(_followed ? 'Following' : 'Follow farm'),
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 15),
-          ),
-        ),
-      ],
-    ),
-  );
 }
 
 class _SellerDashboardPage extends StatelessWidget {
@@ -3492,18 +3156,6 @@ class _ConsumerProfilePage extends StatelessWidget {
   );
 }
 
-class _CategoryChip extends StatelessWidget {
-  const _CategoryChip({required this.icon, required this.label});
-  final IconData icon;
-  final String label;
-  @override
-  Widget build(BuildContext context) => Chip(
-    avatar: Icon(icon, size: 18, color: _green),
-    label: Text(label),
-    backgroundColor: Colors.white,
-    side: const BorderSide(color: Color(0xFFE8DDC6)),
-  );
-}
 
 class _MetricCard extends StatelessWidget {
   const _MetricCard({
