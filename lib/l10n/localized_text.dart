@@ -416,6 +416,7 @@ const _fi = <String, String>{
   'Phone number': 'Puhelinnumero',
   'Business location': 'Yrityksen sijainti',
   'Seller location': 'Myyjän sijainti',
+  'Your location': 'Sijaintisi',
   'This location powers nearby discovery.':
       'Tämän sijainnin avulla löydät lähellä olevat kohteet.',
   'Turn on location services, or enter your address manually.':
@@ -427,11 +428,18 @@ const _fi = <String, String>{
   'We could not locate this address. Check it and try again.':
       'Osoitetta ei löytynyt. Tarkista se ja yritä uudelleen.',
   'Where do you make or sell?': 'Missä valmistat tai myyt?',
+  'Choose your location': 'Valitse sijaintisi',
+  'We use this location to show nearby producers, products and Hot Sales. Use your current location or choose another area.':
+      'Näytämme tämän sijainnin perusteella lähellä olevia tuottajia, tuotteita ja Hot Sale -tarjouksia. Käytä nykyistä sijaintiasi tai valitse toinen alue.',
   'Add your farm, kitchen, pickup point or production location.':
       'Lisää maatila, keittiö, noutopiste tai tuotantopaikka.',
   'Suggest from my current position': 'Ehdota nykyisen sijaintini perusteella',
   'Optional shortcut only. Edit the address below if you are not currently at the seller location.':
       'Valinnainen oikotie. Muokkaa alla olevaa osoitetta, jos et ole nyt myyjän sijainnissa.',
+  'Use your current location or choose another location below.':
+      'Käytä nykyistä sijaintiasi tai valitse alta toinen sijainti.',
+  'Zoom in and tap your preferred location. The marker and address fields will update.':
+      'Lähennä karttaa ja napauta haluamaasi sijaintia. Merkki ja osoitekentät päivittyvät.',
   'Street address and number *': 'Katuosoite ja numero *',
   'For example: Market Street 12': 'Esimerkiksi: Kauppakatu 12',
   'Building, block, unit or floor': 'Rakennus, rappu, asunto tai kerros',
@@ -442,6 +450,7 @@ const _fi = <String, String>{
   'City *': 'Kaupunki *',
   'Country *': 'Maa *',
   'Confirm seller location': 'Vahvista myyjän sijainti',
+  'Confirm location': 'Vahvista sijainti',
   'Discover local producers': 'Löydä paikalliset tuottajat',
   'Seasonal food and small businesses, close to home.':
       'Sesonkiruokaa ja pienyrityksiä läheltä kotia.',
@@ -495,12 +504,16 @@ const _fi = <String, String>{
   'Available at': 'Saatavilla kohteessa',
   'Translated from': 'Käännetty kielestä',
   'Original': 'Alkuperäinen',
-  'No farm Hot Sales within 50 km yet': 'Ei tilojen pikamyyntejä 50 km:n säteellä',
-  'New seasonal products will appear here.': 'Uudet kausituotteet näkyvät täällä.',
+  'No farm Hot Sales within 50 km yet':
+      'Ei tilojen pikamyyntejä 50 km:n säteellä',
+  'New seasonal products will appear here.':
+      'Uudet kausituotteet näkyvät täällä.',
   'Farm orders': 'Tilan tilaukset',
   'Your orders': 'Tilauksesi',
-  'Review and prepare customer requests.': 'Tarkista ja valmistele asiakkaiden tilauspyynnöt.',
-  'Track requests and pickup details.': 'Seuraa tilauspyyntöjä ja noutotietoja.',
+  'Review and prepare customer requests.':
+      'Tarkista ja valmistele asiakkaiden tilauspyynnöt.',
+  'Track requests and pickup details.':
+      'Seuraa tilauspyyntöjä ja noutotietoja.',
   'No orders yet': 'Ei vielä tilauksia',
   'Reject': 'Hylkää',
   'Accept': 'Hyväksy',
@@ -883,6 +896,7 @@ const _sv = <String, String>{
   'Phone number': 'Telefonnummer',
   'Business location': 'Företagets plats',
   'Seller location': 'Säljarens plats',
+  'Your location': 'Din plats',
   'This location powers nearby discovery.':
       'Denna plats används för att hitta utbud i närheten.',
   'Turn on location services, or enter your address manually.':
@@ -894,11 +908,18 @@ const _sv = <String, String>{
   'We could not locate this address. Check it and try again.':
       'Vi kunde inte hitta adressen. Kontrollera den och försök igen.',
   'Where do you make or sell?': 'Var producerar eller säljer du?',
+  'Choose your location': 'Välj din plats',
+  'We use this location to show nearby producers, products and Hot Sales. Use your current location or choose another area.':
+      'Vi använder platsen för att visa producenter, produkter och Hot Sales i närheten. Använd din nuvarande plats eller välj ett annat område.',
   'Add your farm, kitchen, pickup point or production location.':
       'Lägg till din gård, ditt kök, din upphämtningsplats eller produktionsplats.',
   'Suggest from my current position': 'Föreslå från min nuvarande position',
   'Optional shortcut only. Edit the address below if you are not currently at the seller location.':
       'Endast en valfri genväg. Redigera adressen nedan om du inte är på säljarens plats just nu.',
+  'Use your current location or choose another location below.':
+      'Använd din nuvarande plats eller välj en annan plats nedan.',
+  'Zoom in and tap your preferred location. The marker and address fields will update.':
+      'Zooma in och tryck på den plats du föredrar. Markören och adressfälten uppdateras.',
   'Street address and number *': 'Gatuadress och nummer *',
   'For example: Market Street 12': 'Till exempel: Marknadsgatan 12',
   'Building, block, unit or floor':
@@ -910,6 +931,7 @@ const _sv = <String, String>{
   'City *': 'Ort *',
   'Country *': 'Land *',
   'Confirm seller location': 'Bekräfta säljarens plats',
+  'Confirm location': 'Bekräfta plats',
   'Fresh food near you': 'Färsk mat nära dig',
   'Discover local producers': 'Upptäck lokala producenter',
   'Seasonal food and small businesses, close to home.':
@@ -942,7 +964,8 @@ const _sv = <String, String>{
   'Use current location': 'Använd nuvarande plats',
   'Hide farm tile': 'Dölj gårdskortet',
   'Show farm tile': 'Visa gårdskortet',
-  'Could not load nearby Hot Sales': 'Kunde inte läsa in snabbförsäljning i närheten',
+  'Could not load nearby Hot Sales':
+      'Kunde inte läsa in snabbförsäljning i närheten',
   'Hot Sales nearby': 'snabbförsäljningar i närheten',
   'km away': 'km bort',
   'available': 'tillgängligt',
@@ -959,17 +982,21 @@ const _sv = <String, String>{
   'Farm pickup': 'Hämtning på gården',
   'Select a pickup place.': 'Välj en upphämtningsplats.',
   'Total': 'Totalt',
-  'Order request sent to the farm.': 'Beställningsförfrågan skickades till gården.',
+  'Order request sent to the farm.':
+      'Beställningsförfrågan skickades till gården.',
   'Sold by': 'Säljs av',
   'Available at': 'Tillgänglig på',
   'Translated from': 'Översatt från',
   'Original': 'Original',
-  'No farm Hot Sales within 50 km yet': 'Ingen snabbförsäljning från gårdar inom 50 km ännu',
+  'No farm Hot Sales within 50 km yet':
+      'Ingen snabbförsäljning från gårdar inom 50 km ännu',
   'New seasonal products will appear here.': 'Nya säsongsprodukter visas här.',
   'Farm orders': 'Gårdsbeställningar',
   'Your orders': 'Dina beställningar',
-  'Review and prepare customer requests.': 'Granska och förbered kundernas förfrågningar.',
-  'Track requests and pickup details.': 'Följ förfrågningar och upphämtningsdetaljer.',
+  'Review and prepare customer requests.':
+      'Granska och förbered kundernas förfrågningar.',
+  'Track requests and pickup details.':
+      'Följ förfrågningar och upphämtningsdetaljer.',
   'No orders yet': 'Inga beställningar ännu',
   'Reject': 'Avvisa',
   'Accept': 'Godkänn',

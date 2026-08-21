@@ -12,18 +12,24 @@ import '../../l10n/localized_text.dart';
 class LocationSheet extends StatefulWidget {
   const LocationSheet({
     required this.isBusiness,
+    this.isConsumer = false,
     this.initialLocation,
     super.key,
   });
   final bool isBusiness;
+  final bool isConsumer;
   final ConfirmedLocation? initialLocation;
   @override
   State<LocationSheet> createState() => _LocationSheetState();
 }
 
 class _SellerLocationVisual extends StatelessWidget {
-  const _SellerLocationVisual({required this.isBusiness});
+  const _SellerLocationVisual({
+    required this.isBusiness,
+    this.isConsumer = false,
+  });
   final bool isBusiness;
+  final bool isConsumer;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -69,7 +75,9 @@ class _SellerLocationVisual extends StatelessWidget {
                 alignment: Alignment.center,
                 children: [
                   Icon(
-                    isBusiness
+                    isConsumer
+                        ? Icons.explore_rounded
+                        : isBusiness
                         ? Icons.storefront_rounded
                         : Icons.agriculture_rounded,
                     color: const Color(0xFF2F6B45),
@@ -98,7 +106,11 @@ class _SellerLocationVisual extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    isBusiness ? 'Business location' : 'Seller location',
+                    isConsumer
+                        ? 'Your location'
+                        : isBusiness
+                        ? 'Business location'
+                        : 'Seller location',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w900,
@@ -425,7 +437,9 @@ class _LocationSheetState extends State<LocationSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          widget.isBusiness
+                          widget.isConsumer
+                              ? 'Choose your location'
+                              : widget.isBusiness
                               ? 'Where is your business?'
                               : 'Where do you make or sell?',
                           style: const TextStyle(
@@ -434,7 +448,9 @@ class _LocationSheetState extends State<LocationSheet> {
                           ),
                         ),
                         Text(
-                          widget.isBusiness
+                          widget.isConsumer
+                              ? 'We use this location to show nearby producers, products and Hot Sales. Use your current location or choose another area.'
+                              : widget.isBusiness
                               ? 'Add the storefront, farm or operating location customers should discover.'
                               : 'Add your farm, kitchen, pickup point or production location.',
                           style: const TextStyle(
@@ -452,7 +468,10 @@ class _LocationSheetState extends State<LocationSheet> {
                 ],
               ),
               const SizedBox(height: 18),
-              _SellerLocationVisual(isBusiness: widget.isBusiness),
+              _SellerLocationVisual(
+                isBusiness: widget.isBusiness,
+                isConsumer: widget.isConsumer,
+              ),
               const SizedBox(height: 16),
               OutlinedButton.icon(
                 onPressed: _busy ? null : _detect,
@@ -470,8 +489,10 @@ class _LocationSheetState extends State<LocationSheet> {
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Optional shortcut only. Edit the address below if you are not currently at the seller location.',
+              Text(
+                widget.isConsumer
+                    ? 'Use your current location or choose another location below.'
+                    : 'Optional shortcut only. Edit the address below if you are not currently at the seller location.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Color(0xFF647267),
@@ -525,8 +546,10 @@ class _LocationSheetState extends State<LocationSheet> {
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Zoom in and tap the exact farm location. The marker and address fields will update.',
+              Text(
+                widget.isConsumer
+                    ? 'Zoom in and tap your preferred location. The marker and address fields will update.'
+                    : 'Zoom in and tap the exact farm location. The marker and address fields will update.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Color(0xFF647267),
@@ -606,9 +629,13 @@ class _LocationSheetState extends State<LocationSheet> {
               const SizedBox(height: 18),
               FilledButton(
                 onPressed: _busy ? null : _confirm,
-                child: const Padding(
-                  padding: EdgeInsets.all(14),
-                  child: Text('Confirm seller location'),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Text(
+                    widget.isConsumer
+                        ? 'Confirm location'
+                        : 'Confirm seller location',
+                  ),
                 ),
               ),
             ],

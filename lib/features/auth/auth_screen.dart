@@ -1027,11 +1027,22 @@ class _AuthScreenState extends State<AuthScreen>
       builder:
           (_) => LocationSheet(
             isBusiness: _effectiveType == _AccountType.business,
+            isConsumer: _effectiveType == _AccountType.consumer,
             initialLocation: _confirmedLocation,
           ),
     );
     if (location == null || !mounted) return;
 
+    // Consumer location is used for nearby discovery.
+    // It is not stored as a seller's registered location.
+    if (_effectiveType == _AccountType.consumer) {
+      setState(() {
+        _confirmedLocation = location;
+      });
+
+      _scheduleDraftSave();
+      return;
+    }
     setState(() => _authBusy = true);
     try {
       await _backend.confirmLocation(location);
@@ -1061,9 +1072,9 @@ class _AuthScreenState extends State<AuthScreen>
       }
       if (mounted) {
         setState(() {});
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location updated.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Location updated.')));
       }
     } catch (error) {
       if (mounted) _showAuthError(_serverMessage(error));
@@ -1136,7 +1147,9 @@ class _AuthScreenState extends State<AuthScreen>
     if (result == null || !mounted) return;
     final location = _confirmedLocation;
     if (location == null) {
-      _showAuthError('Add your farm location before editing the public profile.');
+      _showAuthError(
+        'Add your farm location before editing the public profile.',
+      );
       return;
     }
 
@@ -2755,9 +2768,11 @@ class _MainAppShellState extends State<_MainAppShell> {
         isConsumerMode
             ? <Widget>[
               if (widget.location == null)
-                const _FutureTab(
+                _FutureTab(
                   icon: Icons.location_off_outlined,
                   title: 'Confirm your location to see your home feed',
+                  actionLabel: 'Confirm location',
+                  onTap: widget.onEditLocation,
                 )
               else
                 ConsumerHomePage(
@@ -2765,9 +2780,11 @@ class _MainAppShellState extends State<_MainAppShell> {
                   onOpenExplore: () => setState(() => _index = 1),
                 ),
               if (widget.location == null)
-                const _FutureTab(
+                _FutureTab(
                   icon: Icons.location_off_outlined,
                   title: 'Confirm your location to explore nearby Hot Sales',
+                  actionLabel: 'Confirm location',
+                  onTap: widget.onEditLocation,
                 )
               else
                 ConsumerExplorePage(location: widget.location!),
@@ -3156,7 +3173,6 @@ class _ConsumerProfilePage extends StatelessWidget {
   );
 }
 
-
 class _MetricCard extends StatelessWidget {
   const _MetricCard({
     required this.label,
@@ -3191,9 +3207,17 @@ class _MetricCard extends StatelessWidget {
 }
 
 class _FutureTab extends StatelessWidget {
-  const _FutureTab({required this.icon, required this.title});
+  const _FutureTab({
+    required this.icon,
+    required this.title,
+    this.onTap,
+    this.actionLabel,
+  });
+
   final IconData icon;
   final String title;
+  final VoidCallback? onTap;
+  final String? actionLabel;
 
   @override
   Widget build(BuildContext context) => SafeArea(
@@ -3203,7 +3227,18 @@ class _FutureTab extends StatelessWidget {
         children: [
           Icon(icon, size: 42, color: _green),
           const SizedBox(height: 12),
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          if (onTap != null) ...[
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: onTap,
+              child: Text(actionLabel ?? 'Confirm location'),
+            ),
+          ],
         ],
       ),
     ),
@@ -3419,56 +3454,56 @@ class _ProfileIdentityCard extends StatelessWidget {
         child: Stack(
           alignment: Alignment.topCenter,
           children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(28),
-            child: SizedBox(
-              height: 168,
-              width: double.infinity,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (coverPhotoBytes != null)
-                    Image.memory(coverPhotoBytes!, fit: BoxFit.cover)
-                  else if (coverPhotoUrl?.isNotEmpty == true)
-                    CachedNetworkImage(
-                      imageUrl: coverPhotoUrl!,
-                      fit: BoxFit.cover,
-                      placeholder:
-                          (_, _) => Image.asset(image, fit: BoxFit.cover),
-                      errorWidget:
-                          (_, _, _) => Image.asset(image, fit: BoxFit.cover),
-                    )
-                  else
-                    Image.asset(image, fit: BoxFit.cover),
-                  const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0x00081710), Color(0xB3081710)],
-                        stops: [0.45, 1],
-                      ),
-                    ),
-                  ),
-                  if (onChangeCoverPhoto != null)
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: Material(
-                        color: const Color(0xD9FFFFFF),
-                        shape: const CircleBorder(),
-                        child: IconButton(
-                          tooltip: 'Change cover photo',
-                          onPressed: onChangeCoverPhoto,
-                          icon: const Icon(Icons.photo_camera_outlined),
-                          color: _deepGreen,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: SizedBox(
+                height: 168,
+                width: double.infinity,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (coverPhotoBytes != null)
+                      Image.memory(coverPhotoBytes!, fit: BoxFit.cover)
+                    else if (coverPhotoUrl?.isNotEmpty == true)
+                      CachedNetworkImage(
+                        imageUrl: coverPhotoUrl!,
+                        fit: BoxFit.cover,
+                        placeholder:
+                            (_, _) => Image.asset(image, fit: BoxFit.cover),
+                        errorWidget:
+                            (_, _, _) => Image.asset(image, fit: BoxFit.cover),
+                      )
+                    else
+                      Image.asset(image, fit: BoxFit.cover),
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0x00081710), Color(0xB3081710)],
+                          stops: [0.45, 1],
                         ),
                       ),
                     ),
-                ],
+                    if (onChangeCoverPhoto != null)
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: Material(
+                          color: const Color(0xD9FFFFFF),
+                          shape: const CircleBorder(),
+                          child: IconButton(
+                            tooltip: 'Change cover photo',
+                            onPressed: onChangeCoverPhoto,
+                            icon: const Icon(Icons.photo_camera_outlined),
+                            color: _deepGreen,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
             Positioned(
               top: 124,
               child: Semantics(
@@ -3480,77 +3515,77 @@ class _ProfileIdentityCard extends StatelessWidget {
                     onTap: onChangeProfilePhoto,
                     customBorder: const CircleBorder(),
                     child: SizedBox(
-              width: 96,
-              height: 96,
-              child: Stack(
-                children: [
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    child: Container(
-                      width: 88,
-                      height: 88,
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Color(0x1F0D2A1B),
-                            blurRadius: 18,
-                            offset: Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: CircleAvatar(
-                        backgroundColor: _mist,
-                        backgroundImage: _avatarImage,
-                        child:
-                            profilePhotoBytes != null ||
-                                    photoUrl?.isNotEmpty == true
-                                ? null
-                                : Text(
-                                  initialsSource.isEmpty
-                                      ? 'F'
-                                      : initialsSource[0].toUpperCase(),
-                                  style: GoogleFonts.fraunces(
-                                    color: _green,
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                      ),
-                    ),
-                  ),
-                  if (onChangeProfilePhoto != null)
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: IgnorePointer(
-                        child: Tooltip(
-                          message: 'Change farm profile photo',
-                          child: Material(
-                            color: _green,
-                            shape: const CircleBorder(),
-                            elevation: 2,
-                            child: const SizedBox(
-                              width: 34,
-                              height: 34,
-                              child: Icon(
-                                Icons.photo_camera_outlined,
+                      width: 96,
+                      height: 96,
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            child: Container(
+                              width: 88,
+                              height: 88,
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
                                 color: Colors.white,
-                                size: 18,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Color(0x1F0D2A1B),
+                                    blurRadius: 18,
+                                    offset: Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: CircleAvatar(
+                                backgroundColor: _mist,
+                                backgroundImage: _avatarImage,
+                                child:
+                                    profilePhotoBytes != null ||
+                                            photoUrl?.isNotEmpty == true
+                                        ? null
+                                        : Text(
+                                          initialsSource.isEmpty
+                                              ? 'F'
+                                              : initialsSource[0].toUpperCase(),
+                                          style: GoogleFonts.fraunces(
+                                            color: _green,
+                                            fontSize: 28,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
                               ),
                             ),
                           ),
-                        ),
+                          if (onChangeProfilePhoto != null)
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: IgnorePointer(
+                                child: Tooltip(
+                                  message: 'Change farm profile photo',
+                                  child: Material(
+                                    color: _green,
+                                    shape: const CircleBorder(),
+                                    elevation: 2,
+                                    child: const SizedBox(
+                                      width: 34,
+                                      height: 34,
+                                      child: Icon(
+                                        Icons.photo_camera_outlined,
+                                        color: Colors.white,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                    ),
-                ],
                     ),
                   ),
                 ),
-              ),
               ),
             ),
           ],
