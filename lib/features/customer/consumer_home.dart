@@ -938,7 +938,10 @@ class _UpcomingNearYouSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final header = _SectionHeader(title: localizeText(context, 'Upcoming near you'));
+    final header = Align(
+      alignment: Alignment.centerLeft,
+      child: _SectionHeader(title: localizeText(context, 'Upcoming near you')),
+    );
     if (connectionState != ConnectionState.done) {
       return Column(
         children: [header, const SizedBox(height: 12), _loadingRow()],
