@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Text;
 import 'package:geolocator/geolocator.dart';
 
@@ -49,6 +51,10 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
   bool _searchOpen = false;
   final _searchController = TextEditingController();
   String _searchQuery = '';
+  Timer? _searchDebounce;
+  List<ProductPost> _searchResults = const [];
+  bool _searching = false;
+  Object? _searchError;
 
   @override
   void initState() {
@@ -59,6 +65,7 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
@@ -172,6 +179,42 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
     _openProductFeed(query: trimmed);
   }
 
+  // Live suggestions call the backend's own search (title/description across
+  // all locales) rather than substring-matching only the already-loaded
+  // nearby list, debounced so we're not firing a request per keystroke.
+  void _onSearchQueryChanged(String value) {
+    setState(() => _searchQuery = value);
+    _searchDebounce?.cancel();
+    final trimmed = value.trim();
+    if (trimmed.length < 2) {
+      setState(() {
+        _searchResults = const [];
+        _searching = false;
+        _searchError = null;
+      });
+      return;
+    }
+    setState(() => _searching = true);
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () async {
+      try {
+        final ids = await searchHotSaleIds(trimmed);
+        if (!mounted || _searchController.text.trim() != trimmed) return;
+        setState(() {
+          _searchResults =
+              _lastLoadedProducts.where((p) => ids.contains(p.id)).toList();
+          _searching = false;
+          _searchError = null;
+        });
+      } catch (error) {
+        if (!mounted || _searchController.text.trim() != trimmed) return;
+        setState(() {
+          _searching = false;
+          _searchError = error;
+        });
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) => ColoredBox(
     color: _cream,
@@ -189,8 +232,12 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
                 () => setState(() {
                   _searchOpen = !_searchOpen;
                   if (!_searchOpen) {
+                    _searchDebounce?.cancel();
                     _searchController.clear();
                     _searchQuery = '';
+                    _searchResults = const [];
+                    _searching = false;
+                    _searchError = null;
                   }
                 }),
           ),
@@ -199,8 +246,10 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
             _SearchPanel(
               controller: _searchController,
               query: _searchQuery,
-              products: _lastLoadedProducts,
-              onQueryChanged: (value) => setState(() => _searchQuery = value),
+              results: _searchResults,
+              searching: _searching,
+              error: _searchError,
+              onQueryChanged: _onSearchQueryChanged,
               onSubmit: _submitSearch,
               onPickCategory:
                   (category) => setState(() {
@@ -362,7 +411,9 @@ class _SearchPanel extends StatelessWidget {
   const _SearchPanel({
     required this.controller,
     required this.query,
-    required this.products,
+    required this.results,
+    required this.searching,
+    required this.error,
     required this.onQueryChanged,
     required this.onSubmit,
     required this.onPickCategory,
@@ -371,7 +422,9 @@ class _SearchPanel extends StatelessWidget {
 
   final TextEditingController controller;
   final String query;
-  final List<ProductPost> products;
+  final List<ProductPost> results;
+  final bool searching;
+  final Object? error;
   final ValueChanged<String> onQueryChanged;
   final ValueChanged<String> onSubmit;
   final ValueChanged<ProductCategory> onPickCategory;
@@ -380,6 +433,8 @@ class _SearchPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final trimmed = query.trim().toLowerCase();
+    // Category chips are a small fixed list, so matching them stays local —
+    // only product results go through the server search.
     final matchingCategories =
         trimmed.isEmpty
             ? const <ProductCategory>[]
@@ -387,19 +442,7 @@ class _SearchPanel extends StatelessWidget {
                 .where((c) => c.label.toLowerCase().contains(trimmed))
                 .take(4)
                 .toList();
-    final matchingProducts =
-        trimmed.isEmpty
-            ? const <ProductPost>[]
-            : products
-                .where(
-                  (p) =>
-                      p.titleFor(context).toLowerCase().contains(trimmed) ||
-                      p.farmName.toLowerCase().contains(trimmed),
-                )
-                .take(6)
-                .toList();
-    final hasResults =
-        matchingCategories.isNotEmpty || matchingProducts.isNotEmpty;
+    final hasResults = matchingCategories.isNotEmpty || results.isNotEmpty;
 
     return Container(
       decoration: BoxDecoration(
@@ -419,6 +462,16 @@ class _SearchPanel extends StatelessWidget {
             decoration: InputDecoration(
               hintText: localizeText(context, 'Search a product'),
               prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon:
+                  searching
+                      ? const Padding(
+                        padding: EdgeInsets.all(14),
+                        child: SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                      : null,
               filled: true,
               fillColor: const Color(0xFFF3F2EA),
               border: OutlineInputBorder(
@@ -429,7 +482,15 @@ class _SearchPanel extends StatelessWidget {
           ),
           if (trimmed.isNotEmpty) ...[
             const SizedBox(height: 8),
-            if (!hasResults)
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  error.toString().replaceFirst('Bad state: ', ''),
+                  style: const TextStyle(color: Colors.red),
+                ),
+              )
+            else if (!hasResults && !searching)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
@@ -446,7 +507,7 @@ class _SearchPanel extends StatelessWidget {
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => onPickCategory(category),
                 ),
-              for (final product in matchingProducts)
+              for (final product in results)
                 ListTile(
                   dense: true,
                   leading: ClipRRect(

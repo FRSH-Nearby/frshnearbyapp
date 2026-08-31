@@ -279,6 +279,42 @@ Future<List<ProductPost>> fetchNearbyProducts({
   return loaded;
 }
 
+/// Server-side full-text search over Hot Sale titles/descriptions (original
+/// text and all completed translations). Only `id`s are requested: the
+/// backend's `searchHotSales` returns the bare `HotSaleView` shape (no farm,
+/// distance, or follow data), so callers intersect the returned ids against
+/// an already-loaded `nearbyHotSales` list to keep farm context for display
+/// and basket actions. The backend itself ignores queries under 2 chars, so
+/// we skip the round trip for those too.
+Future<Set<String>> searchHotSaleIds(String query, {int limit = 25}) async {
+  final trimmed = query.trim();
+  if (trimmed.length < 2) return {};
+  final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+  if (token == null) throw StateError('Please sign in again.');
+  final dio = Dio(BaseOptions(baseUrl: ApiConfig.graphqlUrl));
+  final response = await dio.post<Map<String, dynamic>>(
+    '',
+    data: {
+      'query':
+          'query SearchHotSales(\$search: String!, \$limit: Int) { searchHotSales(search: \$search, limit: \$limit) { id } }',
+      'variables': {'search': trimmed, 'limit': limit},
+    },
+    options: Options(headers: {'authorization': 'Bearer $token'}),
+  );
+  final body = response.data ?? const {};
+  final errors = body['errors'] as List<dynamic>?;
+  if (errors?.isNotEmpty == true) {
+    throw StateError(
+      (errors!.first as Map<String, dynamic>)['message'] as String? ??
+          'Search failed.',
+    );
+  }
+  final data = body['data'] as Map<String, dynamic>?;
+  return ((data?['searchHotSales'] as List<dynamic>?) ?? const [])
+      .map((item) => (item as Map<String, dynamic>)['id'] as String)
+      .toSet();
+}
+
 // ---- orders (real order history, used for "recent orders" + "upcoming pickups") ----
 
 class OrderItem {
