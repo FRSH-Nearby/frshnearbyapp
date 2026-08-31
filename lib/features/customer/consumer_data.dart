@@ -94,8 +94,10 @@ class ProductPost {
         originalProductionDetail;
   }
 
+  String get farmOwnerId => json['farmOwnerId'] as String;
   String get farmName => json['farmName'] as String;
   String? get farmProfilePhotoUrl => json['farmProfilePhotoUrl'] as String?;
+  String? get farmCoverPhotoUrl => json['farmCoverPhotoUrl'] as String?;
   String? get farmDescription => json['farmDescription'] as String?;
   int get followerCount => (json['followerCount'] as num?)?.toInt() ?? 0;
   bool get isFollowed => json['isFollowed'] as bool? ?? false;
@@ -103,6 +105,8 @@ class ProductPost {
     json['farmAddress'] as String?,
     json['farmCity'] as String?,
   ].where((value) => value?.isNotEmpty == true).join(', ');
+  double get latitude => (json['latitude'] as num).toDouble();
+  double get longitude => (json['longitude'] as num).toDouble();
   double get distanceKm => (json['distanceKm'] as num).toDouble();
   DateTime? get producedAt =>
       DateTime.tryParse(json['producedAt'] as String? ?? '');
@@ -117,6 +121,14 @@ class ProductPost {
   Uint8List get imageBytes => base64Decode(json['imageBase64'] as String);
   String priceFor(BuildContext context) =>
       '€${(priceCents / 100).toStringAsFixed(2)} / ${unitFor(context)}';
+  String quantityLabelFor(BuildContext context) =>
+      '${quantity.toStringAsFixed(quantity % 1 == 0 ? 0 : 1)} ${unitFor(context)}';
+  String formatQuantity(BuildContext context, double value) =>
+      '${value.toStringAsFixed(value % 1 == 0 ? 0 : 2)} ${unitFor(context)}';
+  bool hasTranslationFor(BuildContext context) {
+    final locale = Localizations.localeOf(context).languageCode;
+    return locale != sourceLanguage && _translationFor(locale) != null;
+  }
   List<RekoPickup> get rekoRings =>
       ((json['rekoRings'] as List<dynamic>?) ?? const [])
           .map((ring) => RekoPickup(ring as Map<String, dynamic>))

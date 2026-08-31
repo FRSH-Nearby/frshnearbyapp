@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide Text;
 
 import '../../l10n/localized_text.dart';
+import 'basket_controller.dart';
 import 'consumer_data.dart';
 import 'product_feed_page.dart';
 import 'widgets/producer_card.dart';
@@ -15,13 +16,13 @@ class ProducerFeedPage extends StatelessWidget {
   const ProducerFeedPage({
     required this.title,
     required this.producers,
-    required this.onOpenExplore,
+    required this.basket,
     super.key,
   });
 
   final String title;
   final List<ProducerSummary> producers;
-  final VoidCallback onOpenExplore;
+  final BasketController basket;
 
   void _openProducts(BuildContext context, ProducerSummary producer) {
     Navigator.of(context).push(
@@ -30,7 +31,7 @@ class ProducerFeedPage extends StatelessWidget {
             (_) => ProductFeedPage(
               title: producer.farmName,
               products: producer.products,
-              onOpenExplore: onOpenExplore,
+              basket: basket,
             ),
       ),
     );

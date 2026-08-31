@@ -1,6 +1,3 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart' hide Text;
@@ -12,14 +9,23 @@ import 'package:latlong2/latlong.dart';
 import '../../config/api_config.dart';
 import '../auth/backend_service.dart';
 import '../../l10n/localized_text.dart';
+import 'basket_controller.dart';
+import 'consumer_data.dart';
+import 'widgets/basket_sheet.dart';
+import 'widgets/quantity_control.dart';
 
 const _green = Color(0xFF2F6B45);
 const _cream = Color(0xFFFBFAF5);
 
 class ConsumerExplorePage extends StatefulWidget {
-  const ConsumerExplorePage({required this.location, super.key});
+  const ConsumerExplorePage({
+    required this.location,
+    required this.basket,
+    super.key,
+  });
 
   final ConfirmedLocation location;
+  final BasketController basket;
 
   @override
   State<ConsumerExplorePage> createState() => _ConsumerExplorePageState();
@@ -28,14 +34,13 @@ class ConsumerExplorePage extends StatefulWidget {
 class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
   final _mapController = MapController();
   late LatLng _position;
-  late Future<List<_NearbySale>> _sales;
+  late Future<List<ProductPost>> _sales;
   bool _usingLiveLocation = false;
   bool _locating = false;
   bool _showFarmTile = false;
   String? _selectedId;
-  List<_NearbySale> _selectedFarmSales = const [];
-  List<_NearbySale> _knownSales = const [];
-  final Map<String, Map<String, double>> _farmBaskets = {};
+  List<ProductPost> _selectedFarmSales = const [];
+  List<ProductPost> _knownSales = const [];
 
   @override
   void initState() {
@@ -43,47 +48,24 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
     _position = LatLng(widget.location.latitude, widget.location.longitude);
     _sales = _load(_position);
     _useCurrentLocation();
+    widget.basket.addListener(_onBasketChanged);
   }
 
-  Future<List<_NearbySale>> _load(LatLng origin) async {
-    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
-    if (token == null) throw StateError('Please sign in again.');
-    final dio = Dio(BaseOptions(baseUrl: ApiConfig.graphqlUrl));
-    final response = await dio.post<Map<String, dynamic>>(
-      '',
-      data: {
-        'query': '''query NearbyHotSales(\$latitude: Float!, \$longitude: Float!) {
-          nearbyHotSales(radiusKm: 50, limit: 50, latitude: \$latitude, longitude: \$longitude) {
-            id originalLanguage detectedLanguage originalTitle description unit customUnit quantityStep priceCents quantity
-            productionDetail producedAt availableAtFarm
-            translations { locale title description productionDetail status }
-            imageMimeType imageBase64 farmId farmName farmProfilePhotoUrl
-            farmOwnerId farmCoverPhotoUrl farmDescription followerCount isFollowed
-            latitude longitude farmAddress farmCity distanceKm
-            rekoRings { id name municipality regionName addressLine postalCode
-              schedule { frequency weekday startTime endTime timezone }
-            }
-          }
-        }''',
-        'variables': {
-          'latitude': origin.latitude,
-          'longitude': origin.longitude,
-        },
-      },
-      options: Options(headers: {'authorization': 'Bearer $token'}),
+  @override
+  void dispose() {
+    widget.basket.removeListener(_onBasketChanged);
+    super.dispose();
+  }
+
+  void _onBasketChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<List<ProductPost>> _load(LatLng origin) async {
+    final loaded = await fetchNearbyProducts(
+      latitude: origin.latitude,
+      longitude: origin.longitude,
     );
-    final body = response.data ?? const {};
-    final errors = body['errors'] as List<dynamic>?;
-    if (errors?.isNotEmpty == true) {
-      throw StateError(
-        (errors!.first as Map<String, dynamic>)['message'] as String? ??
-            'Could not load nearby Hot Sales.',
-      );
-    }
-    final data = body['data'] as Map<String, dynamic>?;
-    final loaded = ((data?['nearbyHotSales'] as List<dynamic>?) ?? const [])
-        .map((item) => _NearbySale(item as Map<String, dynamic>))
-        .toList();
     _knownSales = loaded;
     return loaded;
   }
@@ -123,7 +105,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
     }
   }
 
-  void _showSaleDetails(_NearbySale sale) {
+  void _showSaleDetails(ProductPost sale) {
     setState(() {
       _selectedId = sale.id;
       _selectedFarmSales =
@@ -152,50 +134,33 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
     );
   }
 
-  Map<String, double> _basketFor(_NearbySale sale) =>
-      _farmBaskets.putIfAbsent(sale.farmId, () => {});
+  double _basketQuantity(ProductPost sale) =>
+      widget.basket.quantityFor(sale.farmId, sale.id);
 
-  double _basketQuantity(_NearbySale sale) => _basketFor(sale)[sale.id] ?? 0;
+  void _changeBasket(ProductPost sale, double change) => widget.basket
+      .changeQuantity(sale.farmId, sale.id, change, sale.quantity);
 
-  void _changeBasket(_NearbySale sale, double change) {
-    final basket = _basketFor(sale);
-    final next = ((_basketQuantity(sale) + change).clamp(0, sale.quantity)).toDouble();
-    setState(() {
-      if (next <= 0) {
-        basket.remove(sale.id);
-      } else {
-        basket[sale.id] = next;
-      }
-    });
-  }
-
-  List<_NearbySale> _basketSales(String farmId) {
-    final basket = _farmBaskets[farmId] ?? const <String, double>{};
+  List<ProductPost> _basketSales(String farmId) {
+    final basket = widget.basket.basketFor(farmId);
     return _knownSales.where((sale) => sale.farmId == farmId && basket.containsKey(sale.id)).toList();
   }
 
   void _openBasket(String farmId) {
-    final sales = _basketSales(farmId);
-    if (sales.isEmpty) return;
+    if (!widget.basket.hasItems(farmId)) return;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder:
-          (_) => _BasketSheet(
-            sales: sales,
-            quantityFor: _basketQuantity,
-            onAdd: (sale) => _changeBasket(sale, sale.quantityStep),
-            onRemove: (sale) => _changeBasket(sale, -sale.quantityStep),
-            onOrdered: () {
-              setState(() => _farmBaskets.remove(farmId));
-              _retry();
-            },
+          (_) => BasketSheet(
+            farmId: farmId,
+            farmSales: _knownSales.where((sale) => sale.farmId == farmId).toList(),
+            basket: widget.basket,
           ),
-    );
+    ).then((_) => _retry());
   }
 
-  void _openFarmSales(List<_NearbySale> sales) {
+  void _openFarmSales(List<ProductPost> sales) {
     setState(() {
       _selectedId = sales.first.id;
       _selectedFarmSales = sales;
@@ -207,7 +172,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
     );
   }
 
-  Future<void> _openPublicFarm(List<_NearbySale> sales) async {
+  Future<void> _openPublicFarm(List<ProductPost> sales) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder:
@@ -223,7 +188,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
     if (mounted) setState(() {});
   }
 
-  void _toggleFarmTile(List<_NearbySale> sales) {
+  void _toggleFarmTile(List<ProductPost> sales) {
     if (_showFarmTile) {
       setState(() => _showFarmTile = false);
       return;
@@ -240,7 +205,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<List<_NearbySale>>(
+  Widget build(BuildContext context) => FutureBuilder<List<ProductPost>>(
     future: _sales,
     builder: (context, snapshot) {
       if (snapshot.connectionState != ConnectionState.done) {
@@ -258,7 +223,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
       final activeFarmId =
           _selectedFarmSales.isEmpty ? null : _selectedFarmSales.first.farmId;
       final activeBasketSales =
-          activeFarmId == null ? const <_NearbySale>[] : _basketSales(activeFarmId);
+          activeFarmId == null ? const <ProductPost>[] : _basketSales(activeFarmId);
       final activeTotal = activeBasketSales.fold<double>(
         0,
         (total, sale) => total + _basketQuantity(sale) * sale.priceCents / 100,
@@ -345,15 +310,15 @@ class _SalesMap extends StatelessWidget {
 
   final MapController controller;
   final LatLng position;
-  final List<_NearbySale> sales;
+  final List<ProductPost> sales;
   final String? selectedId;
-  final ValueChanged<List<_NearbySale>> onFarmSelect;
-  final ValueChanged<_NearbySale> onProductSelect;
+  final ValueChanged<List<ProductPost>> onFarmSelect;
+  final ValueChanged<ProductPost> onProductSelect;
 
   @override
   Widget build(BuildContext context) {
     final center = position;
-    final farms = <String, List<_NearbySale>>{};
+    final farms = <String, List<ProductPost>>{};
     for (final sale in sales) {
       farms.putIfAbsent(sale.farmId, () => []).add(sale);
     }
@@ -489,8 +454,8 @@ class _ExploreHeader extends StatelessWidget {
 // ignore: unused_element
 class _SalesList extends StatelessWidget {
   const _SalesList({required this.sales, required this.onSelect});
-  final List<_NearbySale> sales;
-  final ValueChanged<_NearbySale> onSelect;
+  final List<ProductPost> sales;
+  final ValueChanged<ProductPost> onSelect;
 
   @override
   Widget build(BuildContext context) => ColoredBox(
@@ -511,7 +476,7 @@ class _SalesList extends StatelessWidget {
 
 class _SaleCard extends StatelessWidget {
   const _SaleCard({required this.sale, required this.onTap});
-  final _NearbySale sale;
+  final ProductPost sale;
   final VoidCallback onTap;
 
   @override
@@ -557,10 +522,10 @@ class _FarmMarker extends StatelessWidget {
     required this.onTap,
     required this.onProductTap,
   });
-  final List<_NearbySale> sales;
+  final List<ProductPost> sales;
   final bool selected;
   final VoidCallback onTap;
-  final ValueChanged<_NearbySale> onProductTap;
+  final ValueChanged<ProductPost> onProductTap;
 
   @override
   Widget build(BuildContext context) {
@@ -747,11 +712,11 @@ class _FarmProductCarousel extends StatelessWidget {
     required this.onRemove,
     required this.onOpenFarm,
   });
-  final List<_NearbySale> sales;
-  final ValueChanged<_NearbySale> onDetails;
-  final double Function(_NearbySale) quantityFor;
-  final ValueChanged<_NearbySale> onAdd;
-  final ValueChanged<_NearbySale> onRemove;
+  final List<ProductPost> sales;
+  final ValueChanged<ProductPost> onDetails;
+  final double Function(ProductPost) quantityFor;
+  final ValueChanged<ProductPost> onAdd;
+  final ValueChanged<ProductPost> onRemove;
   final VoidCallback onOpenFarm;
 
   @override
@@ -845,7 +810,7 @@ class _MapProductCard extends StatelessWidget {
     required this.onAdd,
     required this.onRemove,
   });
-  final _NearbySale sale;
+  final ProductPost sale;
   final VoidCallback onDetails;
   final double selectedQuantity;
   final VoidCallback onAdd;
@@ -900,7 +865,7 @@ class _MapProductCard extends StatelessWidget {
           const SizedBox(height: 5),
           SizedBox(
             height: 42,
-            child: _QuantityControl(
+            child: QuantityControl(
               sale: sale,
               selectedQuantity: selectedQuantity,
               onAdd: onAdd,
@@ -911,65 +876,6 @@ class _MapProductCard extends StatelessWidget {
       ),
     ),
   );
-}
-
-class _QuantityControl extends StatelessWidget {
-  const _QuantityControl({
-    required this.sale,
-    required this.selectedQuantity,
-    required this.onAdd,
-    required this.onRemove,
-  });
-  final _NearbySale sale;
-  final double selectedQuantity;
-  final VoidCallback onAdd;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    if (selectedQuantity <= 0) {
-      return SizedBox(
-        width: double.infinity,
-        child: FilledButton.icon(
-          onPressed: sale.quantity > 0 ? onAdd : null,
-          icon: const Icon(Icons.add_rounded, size: 18),
-          label: const Text('Add'),
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-          ),
-        ),
-      );
-    }
-    final canAdd = selectedQuantity + sale.quantityStep <= sale.quantity + .0001;
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFE6F0E1),
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          IconButton(
-            onPressed: onRemove,
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.remove_rounded),
-          ),
-          Expanded(
-            child: Text(
-              sale.formatQuantity(context, selectedQuantity),
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.w900),
-            ),
-          ),
-          IconButton(
-            onPressed: canAdd ? onAdd : null,
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.add_rounded),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _BasketBar extends StatelessWidget {
@@ -1006,224 +912,11 @@ class _BasketBar extends StatelessWidget {
   );
 }
 
-class _BasketSheet extends StatefulWidget {
-  const _BasketSheet({
-    required this.sales,
-    required this.quantityFor,
-    required this.onAdd,
-    required this.onRemove,
-    required this.onOrdered,
-  });
-  final List<_NearbySale> sales;
-  final double Function(_NearbySale) quantityFor;
-  final ValueChanged<_NearbySale> onAdd;
-  final ValueChanged<_NearbySale> onRemove;
-  final VoidCallback onOrdered;
-
-  @override
-  State<_BasketSheet> createState() => _BasketSheetState();
-}
-
-class _BasketSheetState extends State<_BasketSheet> {
-  String? _pickupType;
-  String? _rekoRingId;
-  bool _submitting = false;
-  String? _error;
-
-  List<_NearbySale> get _activeSales =>
-      widget.sales.where((sale) => widget.quantityFor(sale) > 0).toList();
-  bool get _farmEligible => _activeSales.isNotEmpty && _activeSales.every((sale) => sale.availableAtFarm);
-  List<_RekoPickup> get _commonRings {
-    if (_activeSales.isEmpty) return const [];
-    return _activeSales.first.rekoRings
-        .where(
-          (ring) => _activeSales.every(
-            (sale) => sale.rekoRings.any((candidate) => candidate.id == ring.id),
-          ),
-        )
-        .toList();
-  }
-
-  double get _total => widget.sales.fold(
-    0.0,
-    (total, sale) =>
-        total + widget.quantityFor(sale) * sale.priceCents / 100,
-  );
-
-  Future<void> _requestOrder() async {
-    if (_pickupType == null || (_pickupType == 'REKO' && _rekoRingId == null)) {
-      setState(() => _error = 'Select a pickup place.');
-      return;
-    }
-    setState(() { _submitting = true; _error = null; });
-    try {
-      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
-      if (token == null) throw StateError('Please sign in again.');
-      final dio = Dio(BaseOptions(baseUrl: ApiConfig.graphqlUrl));
-      final response = await dio.post<Map<String, dynamic>>(
-        '',
-        data: {
-          'query': 'mutation RequestOrder(\$input: RequestOrderInput!) { requestOrder(input: \$input) { id status } }',
-          'variables': {
-            'input': {
-              'pickupType': _pickupType,
-              if (_rekoRingId != null) 'rekoRingId': _rekoRingId,
-              'items': _activeSales.map((sale) => {
-                'hotSaleId': sale.id,
-                'quantity': widget.quantityFor(sale),
-              }).toList(),
-            },
-          },
-        },
-        options: Options(headers: {'authorization': 'Bearer $token'}),
-      );
-      final body = response.data ?? const {};
-      final errors = body['errors'] as List<dynamic>?;
-      if (errors?.isNotEmpty == true) {
-        throw StateError((errors!.first as Map<String, dynamic>)['message'] as String? ?? 'Order request failed.');
-      }
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order request sent to the farm.')));
-      widget.onOrdered();
-      Navigator.of(context).pop();
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => FractionallySizedBox(
-    heightFactor: .78,
-    child: Material(
-      color: _cream,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.black26,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              'Your basket',
-              style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 14),
-            Expanded(
-              child: ListView(
-                children: [
-                  for (final sale in widget.sales)
-                    if (widget.quantityFor(sale) > 0)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: Row(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(13),
-                              child: Image.memory(
-                                sale.imageBytes,
-                                width: 62,
-                                height: 62,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(sale.titleFor(context), style: const TextStyle(fontWeight: FontWeight.w800)),
-                                  Text(sale.farmName, style: const TextStyle(color: Colors.black54, fontSize: 12)),
-                                ],
-                              ),
-                            ),
-                            SizedBox(
-                              width: 142,
-                              child: _QuantityControl(
-                                sale: sale,
-                                selectedQuantity: widget.quantityFor(sale),
-                                onAdd: () {
-                                  widget.onAdd(sale);
-                                  setState(() {});
-                                },
-                                onRemove: () {
-                                  widget.onRemove(sale);
-                                  setState(() {});
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text('Pickup place', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
-            if (_farmEligible)
-              RadioListTile<String>(
-                value: 'FARM',
-                groupValue: _pickupType,
-                onChanged: (value) => setState(() { _pickupType = value; _rekoRingId = null; }),
-                title: const Text('Farm pickup'),
-                subtitle: Text(widget.sales.first.farmLocation),
-              ),
-            for (final ring in _commonRings)
-              RadioListTile<String>(
-                value: ring.id,
-                groupValue: _pickupType == 'REKO' ? _rekoRingId : null,
-                onChanged: (value) => setState(() { _pickupType = 'REKO'; _rekoRingId = value; }),
-                title: Text(ring.name),
-                subtitle: Text(ring.details),
-              ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(_error!, style: const TextStyle(color: Colors.red)),
-              ),
-            Row(
-              children: [
-                const Expanded(child: Text('Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800))),
-                Text('€${_total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: _submitting || _activeSales.isEmpty ? null : _requestOrder,
-                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
-                child: Text(_submitting ? 'Sending request…' : '${localizeText(context, 'Request order')} • €${_total.toStringAsFixed(2)}'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
 // ignore: unused_element
 class _FarmSalesSheet extends StatelessWidget {
   const _FarmSalesSheet({required this.sales, required this.onSelect});
-  final List<_NearbySale> sales;
-  final ValueChanged<_NearbySale> onSelect;
+  final List<ProductPost> sales;
+  final ValueChanged<ProductPost> onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -1325,11 +1018,11 @@ class _PublicFarmPage extends StatefulWidget {
     required this.onRemove,
     required this.onDetails,
   });
-  final List<_NearbySale> sales;
-  final double Function(_NearbySale) quantityFor;
-  final ValueChanged<_NearbySale> onAdd;
-  final ValueChanged<_NearbySale> onRemove;
-  final ValueChanged<_NearbySale> onDetails;
+  final List<ProductPost> sales;
+  final double Function(ProductPost) quantityFor;
+  final ValueChanged<ProductPost> onAdd;
+  final ValueChanged<ProductPost> onRemove;
+  final ValueChanged<ProductPost> onDetails;
 
   @override
   State<_PublicFarmPage> createState() => _PublicFarmPageState();
@@ -1449,7 +1142,7 @@ class _PublicFarmPageState extends State<_PublicFarmPage> {
                         Text(sale.titleFor(context), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900)),
                         Text(sale.priceFor(context), style: const TextStyle(color: _green, fontSize: 12, fontWeight: FontWeight.w800)),
                         const SizedBox(height: 6),
-                        _QuantityControl(sale: sale, selectedQuantity: widget.quantityFor(sale), onAdd: () { widget.onAdd(sale); setState(() {}); }, onRemove: () { widget.onRemove(sale); setState(() {}); }),
+                        QuantityControl(sale: sale, selectedQuantity: widget.quantityFor(sale), onAdd: () { widget.onAdd(sale); setState(() {}); }, onRemove: () { widget.onRemove(sale); setState(() {}); }),
                       ]),
                     ),
                   );
@@ -1471,7 +1164,7 @@ class _SaleDetailsSheet extends StatelessWidget {
     required this.onAdd,
     required this.onRemove,
   });
-  final _NearbySale sale;
+  final ProductPost sale;
   final double selectedQuantity;
   final VoidCallback onAdd;
   final VoidCallback onRemove;
@@ -1536,7 +1229,7 @@ class _SaleDetailsSheet extends StatelessWidget {
                   style: const TextStyle(color: Colors.black54),
                 ),
                 const SizedBox(height: 14),
-                _QuantityControl(
+                QuantityControl(
                   sale: sale,
                   selectedQuantity: selectedQuantity,
                   onAdd: onAdd,
@@ -1753,108 +1446,4 @@ class _ExploreMessage extends StatelessWidget {
       ]),
     ),
   );
-}
-
-class _NearbySale {
-  _NearbySale(this.json);
-  final Map<String, dynamic> json;
-  String get id => json['id'] as String;
-  String get farmId => json['farmId'] as String;
-  String get farmOwnerId => json['farmOwnerId'] as String;
-  String get originalTitle => json['originalTitle'] as String;
-  String get originalDescription => json['description'] as String;
-  String? get originalProductionDetail => json['productionDetail'] as String?;
-  String get sourceLanguage =>
-      (json['detectedLanguage'] as String? ??
-              json['originalLanguage'] as String? ??
-              'en')
-          .toLowerCase();
-  Map<String, dynamic>? translationFor(String locale) {
-    for (final item in (json['translations'] as List<dynamic>? ?? const [])) {
-      final translation = item as Map<String, dynamic>;
-      if (translation['locale'] == locale &&
-          translation['status'] == 'COMPLETED') {
-        return translation;
-      }
-    }
-    return null;
-  }
-  String titleFor(BuildContext context) {
-    final locale = Localizations.localeOf(context).languageCode;
-    return translationFor(locale)?['title'] as String? ?? originalTitle;
-  }
-  String descriptionFor(BuildContext context) {
-    final locale = Localizations.localeOf(context).languageCode;
-    return translationFor(locale)?['description'] as String? ??
-        originalDescription;
-  }
-  String? productionDetailFor(BuildContext context) {
-    final locale = Localizations.localeOf(context).languageCode;
-    return translationFor(locale)?['productionDetail'] as String? ??
-        originalProductionDetail;
-  }
-  bool hasTranslationFor(BuildContext context) {
-    final locale = Localizations.localeOf(context).languageCode;
-    return locale != sourceLanguage && translationFor(locale) != null;
-  }
-  String get farmName => json['farmName'] as String;
-  String? get farmProfilePhotoUrl => json['farmProfilePhotoUrl'] as String?;
-  String? get farmCoverPhotoUrl => json['farmCoverPhotoUrl'] as String?;
-  String? get farmDescription => json['farmDescription'] as String?;
-  int get followerCount => (json['followerCount'] as num?)?.toInt() ?? 0;
-  bool get isFollowed => json['isFollowed'] as bool? ?? false;
-  String get farmLocation => [
-    json['farmAddress'] as String?,
-    json['farmCity'] as String?,
-  ].where((value) => value?.isNotEmpty == true).join(', ');
-  double get latitude => (json['latitude'] as num).toDouble();
-  double get longitude => (json['longitude'] as num).toDouble();
-  double get distanceKm => (json['distanceKm'] as num).toDouble();
-  double get quantity => (json['quantity'] as num).toDouble();
-  double get quantityStep => (json['quantityStep'] as num?)?.toDouble() ?? 1;
-  int get priceCents => (json['priceCents'] as num).toInt();
-  bool get availableAtFarm => json['availableAtFarm'] as bool? ?? false;
-  List<_RekoPickup> get rekoRings =>
-      ((json['rekoRings'] as List<dynamic>?) ?? const [])
-          .map((ring) => _RekoPickup(ring as Map<String, dynamic>))
-          .toList();
-  String get unit => (json['customUnit'] as String?) ?? (json['unit'] as String).toLowerCase();
-  String unitFor(BuildContext context) =>
-      json['customUnit'] as String? ?? localizeText(context, unit);
-  Uint8List get imageBytes => base64Decode(json['imageBase64'] as String);
-  String priceFor(BuildContext context) =>
-      '€${(priceCents / 100).toStringAsFixed(2)} / ${unitFor(context)}';
-  String quantityLabelFor(BuildContext context) =>
-      '${quantity.toStringAsFixed(quantity % 1 == 0 ? 0 : 1)} ${unitFor(context)}';
-  String formatQuantity(BuildContext context, double value) =>
-      '${value.toStringAsFixed(value % 1 == 0 ? 0 : 2)} ${unitFor(context)}';
-}
-
-class _RekoPickup {
-  const _RekoPickup(this.json);
-  final Map<String, dynamic> json;
-  String get id => json['id'] as String;
-  String get name => json['name'] as String;
-  String get details {
-    final schedule = json['schedule'] as Map<String, dynamic>?;
-    final weekday = schedule?['weekday'] as int?;
-    const days = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday',
-    ];
-    final when =
-        weekday != null && weekday >= 1 && weekday <= 7
-            ? '${days[weekday - 1]} ${schedule?['startTime']}–${schedule?['endTime']}'
-            : null;
-    return [
-      json['addressLine'] as String?,
-      json['municipality'] as String?,
-      when,
-    ].where((value) => value?.isNotEmpty == true).join(' • ');
-  }
 }

@@ -3,11 +3,13 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../l10n/localized_text.dart';
 import '../auth/backend_service.dart';
+import 'basket_controller.dart';
 import 'consumer_data.dart';
 import 'product_feed_page.dart';
 import 'producer_feed_page.dart';
 import 'widgets/category_picker_sheet.dart';
 import 'widgets/producer_card.dart';
+import 'widgets/product_card.dart';
 import 'widgets/product_detail_sheet.dart';
 
 const _green = Color(0xFF2F6B45);
@@ -19,12 +21,14 @@ const _cream = Color(0xFFFBFAF5);
 class ConsumerHomePage extends StatefulWidget {
   const ConsumerHomePage({
     required this.location,
+    required this.basket,
     required this.onOpenExplore,
     required this.onOpenOrders,
     super.key,
   });
 
   final ConfirmedLocation location;
+  final BasketController basket;
   final VoidCallback onOpenExplore;
   final VoidCallback onOpenOrders;
 
@@ -128,7 +132,7 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
               products: _lastLoadedProducts,
               initialCategory: category?.key,
               initialQuery: query,
-              onOpenExplore: widget.onOpenExplore,
+              basket: widget.basket,
             ),
       ),
     );
@@ -141,7 +145,7 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
             (_) => ProducerFeedPage(
               title: title,
               producers: producers,
-              onOpenExplore: widget.onOpenExplore,
+              basket: widget.basket,
             ),
       ),
     );
@@ -155,7 +159,8 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
       builder:
           (_) => ProductDetailSheet(
             product: product,
-            onOpenExplore: widget.onOpenExplore,
+            allProducts: _lastLoadedProducts,
+            basket: widget.basket,
           ),
     );
   }
@@ -236,17 +241,16 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
             ],
           ),
           const SizedBox(height: 26),
-          FutureBuilder<List<RecentOrder>>(
-            future: _ordersFuture,
+          FutureBuilder<List<ProductPost>>(
+            future: _productsFuture,
             builder:
-                (context, snapshot) => _RecentOrdersSection(
+                (context, snapshot) => _HotSalesSection(
                   connectionState: snapshot.connectionState,
                   error: snapshot.error,
-                  orders: snapshot.data ?? const [],
-                  onRetry: _retryOrders,
-                  onDiscoverCategories: _openCategoryPicker,
-                  onOpenExplore: widget.onOpenExplore,
-                  onShowAll: widget.onOpenOrders,
+                  products: snapshot.data ?? const [],
+                  onRetry: _retryProducts,
+                  onOpenDetails: _openProductDetails,
+                  onShowAll: () => _openProductFeed(),
                 ),
           ),
           const SizedBox(height: 26),
@@ -262,6 +266,7 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
                 favorites: favorites,
                 onRetry: _retryProducts,
                 onOpenExplore: widget.onOpenExplore,
+                basket: widget.basket,
                 onDiscoverProducer:
                     () => _openProducerFeed(
                       localizeText(context, 'Producers near you'),
@@ -284,6 +289,7 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
                   error: snapshot.error,
                   orders: snapshot.data ?? const [],
                   onRetry: _retryOrders,
+                  onShowAll: widget.onOpenOrders,
                 ),
           ),
         ],
@@ -598,25 +604,23 @@ Widget _loadingRow() => const SizedBox(
   child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
 );
 
-// ---- recent orders ----
+// ---- hot sales ----
 
-class _RecentOrdersSection extends StatelessWidget {
-  const _RecentOrdersSection({
+class _HotSalesSection extends StatelessWidget {
+  const _HotSalesSection({
     required this.connectionState,
     required this.error,
-    required this.orders,
+    required this.products,
     required this.onRetry,
-    required this.onDiscoverCategories,
-    required this.onOpenExplore,
+    required this.onOpenDetails,
     required this.onShowAll,
   });
 
   final ConnectionState connectionState;
   final Object? error;
-  final List<RecentOrder> orders;
+  final List<ProductPost> products;
   final VoidCallback onRetry;
-  final VoidCallback onDiscoverCategories;
-  final VoidCallback onOpenExplore;
+  final ValueChanged<ProductPost> onOpenDetails;
   final VoidCallback onShowAll;
 
   @override
@@ -624,9 +628,9 @@ class _RecentOrdersSection extends StatelessWidget {
     final header = Row(
       children: [
         Expanded(
-          child: _SectionHeader(title: localizeText(context, 'Your recent orders')),
+          child: _SectionHeader(title: localizeText(context, 'Hot sales near you')),
         ),
-        if (orders.isNotEmpty)
+        if (products.isNotEmpty)
           TextButton(onPressed: onShowAll, child: Text(localizeText(context, 'See all'))),
       ],
     );
@@ -645,17 +649,23 @@ class _RecentOrdersSection extends StatelessWidget {
         ],
       );
     }
-    if (orders.isEmpty) {
+    if (products.isEmpty) {
       return Column(
         children: [
           header,
           const SizedBox(height: 12),
-          _TwoButtonEmptyState(
-            text: localizeText(context, "You haven't ordered anything yet."),
-            primaryLabel: localizeText(context, 'Discover categories'),
-            onPrimary: onDiscoverCategories,
-            secondaryLabel: localizeText(context, 'Go to map'),
-            onSecondary: onOpenExplore,
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _line),
+            ),
+            child: Text(
+              localizeText(context, 'No Hot Sales nearby yet.'),
+              style: const TextStyle(color: _muted),
+            ),
           ),
         ],
       );
@@ -665,100 +675,21 @@ class _RecentOrdersSection extends StatelessWidget {
         header,
         const SizedBox(height: 12),
         SizedBox(
-          height: 108,
+          height: 226,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: orders.length,
+            itemCount: products.length,
             separatorBuilder: (_, _) => const SizedBox(width: 12),
-            itemBuilder: (_, index) => _RecentOrderCard(order: orders[index]),
+            itemBuilder:
+                (_, index) => ProductCard(
+                  product: products[index],
+                  onTap: () => onOpenDetails(products[index]),
+                ),
           ),
         ),
       ],
     );
   }
-}
-
-class _RecentOrderCard extends StatelessWidget {
-  const _RecentOrderCard({required this.order});
-  final RecentOrder order;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = order.items;
-    final first = items.isEmpty ? null : items.first;
-    return Container(
-      width: 240,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _line),
-      ),
-      child: Row(
-        children: [
-          if (first != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.memory(
-                first.imageBytes,
-                width: 68,
-                height: 68,
-                fit: BoxFit.cover,
-              ),
-            ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  order.farmName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  items.length == 1
-                      ? (first?.title ?? '')
-                      : '${items.length} ${localizeText(context, 'items')}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: _muted, fontSize: 11.5),
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE6F0E1),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text(
-                    _statusLabel(context, order.status),
-                    style: const TextStyle(
-                      color: _green,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _statusLabel(BuildContext context, String status) => switch (status) {
-    'REQUESTED' => localizeText(context, 'Requested'),
-    'ACCEPTED' => localizeText(context, 'Accepted'),
-    'REJECTED' => localizeText(context, 'Rejected'),
-    'READY_FOR_PICKUP' => localizeText(context, 'Ready for pickup'),
-    'COMPLETED' => localizeText(context, 'Completed'),
-    'CANCELLED' => localizeText(context, 'Cancelled'),
-    _ => status,
-  };
 }
 
 // ---- favorite producers ----
@@ -772,6 +703,7 @@ class _FavoriteProducersSection extends StatelessWidget {
     required this.onOpenExplore,
     required this.onDiscoverProducer,
     required this.onShowAll,
+    required this.basket,
   });
 
   final ConnectionState connectionState;
@@ -780,6 +712,7 @@ class _FavoriteProducersSection extends StatelessWidget {
   final VoidCallback onRetry;
   final VoidCallback onOpenExplore;
   final VoidCallback onDiscoverProducer;
+  final BasketController basket;
   final VoidCallback onShowAll;
 
   @override
@@ -843,7 +776,7 @@ class _FavoriteProducersSection extends StatelessWidget {
                               (_) => ProductFeedPage(
                                 title: favorites[index].farmName,
                                 products: favorites[index].products,
-                                onOpenExplore: onOpenExplore,
+                                basket: basket,
                               ),
                         ),
                       ),
@@ -863,16 +796,27 @@ class _UpcomingPickupsSection extends StatelessWidget {
     required this.error,
     required this.orders,
     required this.onRetry,
+    required this.onShowAll,
   });
 
   final ConnectionState connectionState;
   final Object? error;
   final List<RecentOrder> orders;
   final VoidCallback onRetry;
+  final VoidCallback onShowAll;
 
   @override
   Widget build(BuildContext context) {
-    final header = _SectionHeader(title: localizeText(context, 'Upcoming pickups'));
+    final upcomingCount = orders.where((order) => order.isUpcoming).length;
+    final header = Row(
+      children: [
+        Expanded(
+          child: _SectionHeader(title: localizeText(context, 'Upcoming pickups')),
+        ),
+        if (upcomingCount > 0)
+          TextButton(onPressed: onShowAll, child: Text(localizeText(context, 'See all'))),
+      ],
+    );
     if (connectionState != ConnectionState.done) {
       return Column(
         children: [header, const SizedBox(height: 12), _loadingRow()],

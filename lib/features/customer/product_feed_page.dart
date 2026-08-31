@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart' hide Text;
 
 import '../../l10n/localized_text.dart';
+import 'basket_controller.dart';
 import 'consumer_data.dart';
 import 'widgets/product_card.dart';
 import 'widgets/product_detail_sheet.dart';
@@ -32,7 +33,7 @@ class ProductFeedPage extends StatefulWidget {
   const ProductFeedPage({
     required this.title,
     required this.products,
-    required this.onOpenExplore,
+    required this.basket,
     this.initialCategory,
     this.initialQuery = '',
     super.key,
@@ -40,7 +41,7 @@ class ProductFeedPage extends StatefulWidget {
 
   final String title;
   final List<ProductPost> products;
-  final VoidCallback onOpenExplore;
+  final BasketController basket;
   final String? initialCategory;
   final String initialQuery;
 
@@ -141,10 +142,8 @@ class _ProductFeedPageState extends State<ProductFeedPage> {
       builder:
           (_) => ProductDetailSheet(
             product: product,
-            onOpenExplore: () {
-              Navigator.of(context).pop();
-              widget.onOpenExplore();
-            },
+            allProducts: widget.products,
+            basket: widget.basket,
           ),
     );
   }

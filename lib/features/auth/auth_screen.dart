@@ -13,6 +13,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../notifications/push_notification_service.dart';
 import '../hot_sales/hot_sales.dart';
+import '../customer/basket_controller.dart';
 import '../customer/consumer_explore.dart';
 import '../customer/consumer_home.dart';
 import '../orders/orders_screen.dart';
@@ -2581,6 +2582,9 @@ class _MainAppShellState extends State<_MainAppShell> {
   late String? _coverPhotoUrl;
   late String? _farmProfilePhotoUrl;
   final _backend = BackendService();
+  // Shared between Home and Explore so a basket started on either tab is
+  // the same order at checkout.
+  final _basket = BasketController();
 
   @override
   void initState() {
@@ -2588,6 +2592,12 @@ class _MainAppShellState extends State<_MainAppShell> {
     _coverPhotoUrl = widget.farmCoverPhotoUrl;
     _farmProfilePhotoUrl = widget.farmProfilePhotoUrl;
     _loadAccountMode();
+  }
+
+  @override
+  void dispose() {
+    _basket.dispose();
+    super.dispose();
   }
 
   @override
@@ -2762,6 +2772,7 @@ class _MainAppShellState extends State<_MainAppShell> {
               else
                 ConsumerHomePage(
                   location: widget.location!,
+                  basket: _basket,
                   onOpenExplore: () => setState(() => _index = 1),
                   onOpenOrders: () => setState(() => _index = 2),
                 ),
@@ -2771,7 +2782,10 @@ class _MainAppShellState extends State<_MainAppShell> {
                   title: 'Confirm your location to explore nearby Hot Sales',
                 )
               else
-                ConsumerExplorePage(location: widget.location!),
+                ConsumerExplorePage(
+                  location: widget.location!,
+                  basket: _basket,
+                ),
               const OrdersScreen(seller: false),
               _ConsumerProfilePage(
                 fullName: widget.fullName,
