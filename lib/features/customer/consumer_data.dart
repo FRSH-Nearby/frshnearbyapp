@@ -153,6 +153,7 @@ class RekoPickup {
   int? get weekday => _schedule?['weekday'] as int?;
   String? get startTime => _schedule?['startTime'] as String?;
   String? get endTime => _schedule?['endTime'] as String?;
+  String? get frequency => _schedule?['frequency'] as String?;
   String get details {
     const days = [
       'Monday',
@@ -315,71 +316,3 @@ Future<Set<String>> searchHotSaleIds(String query, {int limit = 25}) async {
       .toSet();
 }
 
-// ---- orders (real order history, used for "recent orders" + "upcoming pickups") ----
-
-class OrderItem {
-  const OrderItem(this.json);
-  final Map<String, dynamic> json;
-  String get hotSaleId => json['hotSaleId'] as String;
-  String get title => json['title'] as String;
-  String get unit => json['unit'] as String;
-  double get quantity => (json['quantity'] as num).toDouble();
-  Uint8List get imageBytes => base64Decode(json['imageBase64'] as String);
-}
-
-class RecentOrder {
-  const RecentOrder(this.json);
-  final Map<String, dynamic> json;
-  String get id => json['id'] as String;
-  String get status => json['status'] as String;
-  String get pickupType => json['pickupType'] as String? ?? '';
-  String get pickupName => json['pickupName'] as String? ?? '';
-  String get pickupAddress => json['pickupAddress'] as String? ?? '';
-  String get pickupSchedule => json['pickupSchedule'] as String? ?? '';
-  String get farmName => json['farmName'] as String;
-  int get totalCents => (json['totalCents'] as num).toInt();
-  DateTime? get createdAt =>
-      DateTime.tryParse(json['createdAt'] as String? ?? '');
-  List<OrderItem> get items =>
-      ((json['items'] as List<dynamic>?) ?? const [])
-          .map((item) => OrderItem(item as Map<String, dynamic>))
-          .toList();
-
-  /// An order the farm has confirmed but that hasn't been collected yet —
-  /// the closest real signal to "an upcoming pickup you've ordered into".
-  bool get isUpcoming => status == 'ACCEPTED' || status == 'READY_FOR_PICKUP';
-}
-
-Future<List<RecentOrder>> fetchMyOrders() async {
-  final token = await FirebaseAuth.instance.currentUser?.getIdToken();
-  if (token == null) throw StateError('Please sign in again.');
-  final dio = Dio(BaseOptions(baseUrl: ApiConfig.graphqlUrl));
-  const fields =
-      'id status pickupType rekoRingId pickupName pickupAddress pickupSchedule '
-      'farmName totalCents createdAt updatedAt '
-      'items { id hotSaleId title imageMimeType imageBase64 unit quantityStep quantity unitPriceCents lineTotalCents }';
-  final response = await dio.post<Map<String, dynamic>>(
-    '',
-    data: {'query': 'query { myOrders { $fields } }'},
-    options: Options(headers: {'authorization': 'Bearer $token'}),
-  );
-  final body = response.data ?? const {};
-  final errors = body['errors'] as List<dynamic>?;
-  if (errors?.isNotEmpty == true) {
-    throw StateError(
-      (errors!.first as Map<String, dynamic>)['message'] as String? ??
-          'Could not load your orders.',
-    );
-  }
-  final data = body['data'] as Map<String, dynamic>?;
-  final orders = ((data?['myOrders'] as List<dynamic>?) ?? const [])
-      .map((item) => RecentOrder(item as Map<String, dynamic>))
-      .toList();
-  orders.sort((a, b) {
-    final aTime = a.createdAt;
-    final bTime = b.createdAt;
-    if (aTime == null || bTime == null) return 0;
-    return bTime.compareTo(aTime);
-  });
-  return orders;
-}

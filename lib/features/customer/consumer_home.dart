@@ -25,14 +25,12 @@ class ConsumerHomePage extends StatefulWidget {
     required this.location,
     required this.basket,
     required this.onOpenExplore,
-    required this.onOpenOrders,
     super.key,
   });
 
   final ConfirmedLocation location;
   final BasketController basket;
   final VoidCallback onOpenExplore;
-  final VoidCallback onOpenOrders;
 
   @override
   State<ConsumerHomePage> createState() => _ConsumerHomePageState();
@@ -45,7 +43,6 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
   bool _locating = false;
 
   late Future<List<ProductPost>> _productsFuture = _loadProducts();
-  late Future<List<RecentOrder>> _ordersFuture = _loadOrders();
   List<ProductPost> _lastLoadedProducts = const [];
 
   bool _searchOpen = false;
@@ -78,10 +75,7 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
     return products;
   }
 
-  Future<List<RecentOrder>> _loadOrders() => fetchMyOrders();
-
   void _retryProducts() => setState(() => _productsFuture = _loadProducts());
-  void _retryOrders() => setState(() => _ordersFuture = _loadOrders());
 
   // Location defaults to the phone's physical position (matching Explore's
   // behaviour) and falls back to the confirmed signup address when GPS is
@@ -330,15 +324,14 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
             },
           ),
           const SizedBox(height: 26),
-          FutureBuilder<List<RecentOrder>>(
-            future: _ordersFuture,
+          FutureBuilder<List<ProductPost>>(
+            future: _productsFuture,
             builder:
-                (context, snapshot) => _UpcomingPickupsSection(
+                (context, snapshot) => _UpcomingNearYouSection(
                   connectionState: snapshot.connectionState,
                   error: snapshot.error,
-                  orders: snapshot.data ?? const [],
-                  onRetry: _retryOrders,
-                  onShowAll: widget.onOpenOrders,
+                  products: snapshot.data ?? const [],
+                  onRetry: _retryProducts,
                 ),
           ),
         ],
@@ -849,35 +842,103 @@ class _FavoriteProducersSection extends StatelessWidget {
   }
 }
 
-// ---- upcoming pickups ----
+// ---- upcoming near you ----
 
-class _UpcomingPickupsSection extends StatelessWidget {
-  const _UpcomingPickupsSection({
+class _UpcomingEvent {
+  const _UpcomingEvent({
+    required this.ringName,
+    required this.municipality,
+    required this.farmName,
+    required this.occurrence,
+    required this.startTime,
+    required this.endTime,
+  });
+  final String ringName;
+  final String municipality;
+  final String farmName;
+  final DateTime occurrence;
+  final String startTime;
+  final String endTime;
+
+  String dayLabel() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(occurrence.year, occurrence.month, occurrence.day);
+    final diff = day.difference(today).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Tomorrow';
+    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return names[occurrence.weekday - 1];
+  }
+}
+
+DateTime? _nextOccurrence(int weekday, String startTime) {
+  if (weekday < 1 || weekday > 7) return null;
+  final parts = startTime.split(':');
+  final hour = int.tryParse(parts.isNotEmpty ? parts[0] : '');
+  if (hour == null) return null;
+  final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+  final now = DateTime.now();
+  final daysUntil = (weekday - now.weekday) % 7;
+  var candidate = DateTime(
+    now.year,
+    now.month,
+    now.day,
+    hour,
+    minute,
+  ).add(Duration(days: daysUntil));
+  if (candidate.isBefore(now)) candidate = candidate.add(const Duration(days: 7));
+  return candidate;
+}
+
+// A REKO pickup ring is a shared, recurring pickup point that can serve
+// several farms selling nearby. We surface the next occurrence per ring
+// (deduped by id, from the same rekoRings data already on each nearby
+// product) as "what's coming up nearby" — this is what tells us a sale
+// or market day is coming, not the consumer's own past orders.
+// Rings scheduled "every other week" still resolve to the next matching
+// weekday, since the API doesn't expose which week of the pair we're in.
+List<_UpcomingEvent> _upcomingEvents(List<ProductPost> products) {
+  final byRing = <String, _UpcomingEvent>{};
+  for (final product in products) {
+    for (final ring in product.rekoRings) {
+      if (byRing.containsKey(ring.id)) continue;
+      final weekday = ring.weekday;
+      final start = ring.startTime;
+      if (weekday == null || start == null) continue;
+      final occurrence = _nextOccurrence(weekday, start);
+      if (occurrence == null) continue;
+      byRing[ring.id] = _UpcomingEvent(
+        ringName: ring.name,
+        municipality: ring.municipality,
+        farmName: product.farmName,
+        occurrence: occurrence,
+        startTime: start,
+        endTime: ring.endTime ?? '',
+      );
+    }
+  }
+  final events = byRing.values.toList()
+    ..sort((a, b) => a.occurrence.compareTo(b.occurrence));
+  return events.take(8).toList();
+}
+
+class _UpcomingNearYouSection extends StatelessWidget {
+  const _UpcomingNearYouSection({
     required this.connectionState,
     required this.error,
-    required this.orders,
+    required this.products,
     required this.onRetry,
-    required this.onShowAll,
   });
 
   final ConnectionState connectionState;
   final Object? error;
-  final List<RecentOrder> orders;
+  final List<ProductPost> products;
   final VoidCallback onRetry;
-  final VoidCallback onShowAll;
 
   @override
   Widget build(BuildContext context) {
-    final upcomingCount = orders.where((order) => order.isUpcoming).length;
-    final header = Row(
-      children: [
-        Expanded(
-          child: _SectionHeader(title: localizeText(context, 'Upcoming pickups')),
-        ),
-        if (upcomingCount > 0)
-          TextButton(onPressed: onShowAll, child: Text(localizeText(context, 'See all'))),
-      ],
-    );
+    final header = _SectionHeader(title: localizeText(context, 'Upcoming near you'));
     if (connectionState != ConnectionState.done) {
       return Column(
         children: [header, const SizedBox(height: 12), _loadingRow()],
@@ -895,8 +956,8 @@ class _UpcomingPickupsSection extends StatelessWidget {
         ],
       );
     }
-    final upcoming = orders.where((order) => order.isUpcoming).toList();
-    if (upcoming.isEmpty) {
+    final events = _upcomingEvents(products);
+    if (events.isEmpty) {
       return Column(
         children: [
           header,
@@ -910,7 +971,7 @@ class _UpcomingPickupsSection extends StatelessWidget {
               border: Border.all(color: _line),
             ),
             child: Text(
-              localizeText(context, 'No upcoming pickups yet.'),
+              localizeText(context, 'No upcoming pickups nearby yet.'),
               style: const TextStyle(color: _muted),
             ),
           ),
@@ -925,9 +986,9 @@ class _UpcomingPickupsSection extends StatelessWidget {
           height: 100,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: upcoming.length,
+            itemCount: events.length,
             separatorBuilder: (_, _) => const SizedBox(width: 12),
-            itemBuilder: (_, index) => _UpcomingPickupCard(order: upcoming[index]),
+            itemBuilder: (_, index) => _UpcomingEventCard(event: events[index]),
           ),
         ),
       ],
@@ -935,9 +996,9 @@ class _UpcomingPickupsSection extends StatelessWidget {
   }
 }
 
-class _UpcomingPickupCard extends StatelessWidget {
-  const _UpcomingPickupCard({required this.order});
-  final RecentOrder order;
+class _UpcomingEventCard extends StatelessWidget {
+  const _UpcomingEventCard({required this.event});
+  final _UpcomingEvent event;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -953,44 +1014,38 @@ class _UpcomingPickupCard extends StatelessWidget {
       children: [
         Row(
           children: [
-            const Icon(Icons.event_available_outlined, size: 16, color: _green),
-            const SizedBox(width: 6),
-            Expanded(
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE6F0E1),
+                borderRadius: BorderRadius.circular(99),
+              ),
               child: Text(
-                order.pickupName.isEmpty
-                    ? localizeText(context, 'Pickup')
-                    : order.pickupName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                '${event.dayLabel()} ${event.startTime}'
+                '${event.endTime.isNotEmpty ? '–${event.endTime}' : ''}',
+                style: const TextStyle(
+                  color: _green,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11.5,
+                ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
-          order.farmName,
+          event.ringName,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: _green, fontWeight: FontWeight.w700, fontSize: 12),
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
         ),
-        if (order.pickupSchedule.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(
-            order.pickupSchedule,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: _muted, fontSize: 11.5),
-          ),
-        ] else if (order.pickupAddress.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(
-            order.pickupAddress,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: _muted, fontSize: 11.5),
-          ),
-        ],
+        const SizedBox(height: 3),
+        Text(
+          [event.farmName, if (event.municipality.isNotEmpty) event.municipality].join(' • '),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: _muted, fontSize: 11.5),
+        ),
       ],
     ),
   );
