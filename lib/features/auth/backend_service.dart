@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../config/api_config.dart';
 import '../notifications/device_installation_store.dart';
 
 class BackendUser {
@@ -165,10 +166,7 @@ class BackendService {
     : _providedAuth = auth,
       _dio = Dio(
         BaseOptions(
-          baseUrl: const String.fromEnvironment(
-            'FRSH_API_URL',
-            defaultValue: 'https://frshnearby-api.onrender.com/graphql',
-          ),
+          baseUrl: ApiConfig.graphqlUrl,
           connectTimeout: const Duration(seconds: 20),
           receiveTimeout: const Duration(seconds: 30),
         ),

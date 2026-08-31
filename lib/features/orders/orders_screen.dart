@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart' hide Text;
 
+import '../../config/api_config.dart';
 import '../../l10n/localized_text.dart';
 
 const _green = Color(0xFF2F6B45);
@@ -24,7 +25,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Future<Map<String, dynamic>> _send(String query, [Map<String, dynamic> variables = const {}]) async {
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
     if (token == null) throw StateError('Please sign in again.');
-    final dio = Dio(BaseOptions(baseUrl: const String.fromEnvironment('FRSH_API_URL', defaultValue: 'https://frshnearby-api.onrender.com/graphql')));
+    final dio = Dio(BaseOptions(baseUrl: ApiConfig.graphqlUrl));
     final response = await dio.post<Map<String, dynamic>>('', data: {'query': query, 'variables': variables}, options: Options(headers: {'authorization': 'Bearer $token'}));
     final body = response.data ?? const {};
     final errors = body['errors'] as List<dynamic>?;

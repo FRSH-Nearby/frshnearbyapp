@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../config/api_config.dart';
 import '../../l10n/localized_text.dart' show localizeText;
 import '../notifications/device_installation_store.dart';
 
@@ -137,10 +138,7 @@ class _HotSalesApi {
   _HotSalesApi()
     : _dio = Dio(
         BaseOptions(
-          baseUrl: const String.fromEnvironment(
-            'FRSH_API_URL',
-            defaultValue: 'https://frshnearby-api.onrender.com/graphql',
-          ),
+          baseUrl: ApiConfig.graphqlUrl,
           connectTimeout: const Duration(seconds: 20),
           receiveTimeout: const Duration(seconds: 45),
         ),

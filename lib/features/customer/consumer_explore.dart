@@ -9,6 +9,7 @@ import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../config/api_config.dart';
 import '../auth/backend_service.dart';
 import '../../l10n/localized_text.dart';
 
@@ -47,14 +48,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
   Future<List<_NearbySale>> _load(LatLng origin) async {
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
     if (token == null) throw StateError('Please sign in again.');
-    final dio = Dio(
-      BaseOptions(
-        baseUrl: const String.fromEnvironment(
-          'FRSH_API_URL',
-          defaultValue: 'https://frshnearby-api.onrender.com/graphql',
-        ),
-      ),
-    );
+    final dio = Dio(BaseOptions(baseUrl: ApiConfig.graphqlUrl));
     final response = await dio.post<Map<String, dynamic>>(
       '',
       data: {
@@ -1065,7 +1059,7 @@ class _BasketSheetState extends State<_BasketSheet> {
     try {
       final token = await FirebaseAuth.instance.currentUser?.getIdToken();
       if (token == null) throw StateError('Please sign in again.');
-      final dio = Dio(BaseOptions(baseUrl: const String.fromEnvironment('FRSH_API_URL', defaultValue: 'https://frshnearby-api.onrender.com/graphql')));
+      final dio = Dio(BaseOptions(baseUrl: ApiConfig.graphqlUrl));
       final response = await dio.post<Map<String, dynamic>>(
         '',
         data: {
@@ -1352,7 +1346,7 @@ class _PublicFarmPageState extends State<_PublicFarmPage> {
     try {
       final token = await FirebaseAuth.instance.currentUser?.getIdToken();
       if (token == null) throw StateError('Please sign in again.');
-      final dio = Dio(BaseOptions(baseUrl: const String.fromEnvironment('FRSH_API_URL', defaultValue: 'https://frshnearby-api.onrender.com/graphql')));
+      final dio = Dio(BaseOptions(baseUrl: ApiConfig.graphqlUrl));
       final response = await dio.post<Map<String, dynamic>>(
         '',
         data: {

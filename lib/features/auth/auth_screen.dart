@@ -2763,6 +2763,7 @@ class _MainAppShellState extends State<_MainAppShell> {
                 ConsumerHomePage(
                   location: widget.location!,
                   onOpenExplore: () => setState(() => _index = 1),
+                  onOpenOrders: () => setState(() => _index = 2),
                 ),
               if (widget.location == null)
                 const _FutureTab(

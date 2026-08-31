@@ -1,12 +1,14 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
-import 'package:dio/dio.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart' hide Text;
+import 'package:geolocator/geolocator.dart';
 
-import '../auth/backend_service.dart';
 import '../../l10n/localized_text.dart';
+import '../auth/backend_service.dart';
+import 'consumer_data.dart';
+import 'product_feed_page.dart';
+import 'producer_feed_page.dart';
+import 'widgets/category_picker_sheet.dart';
+import 'widgets/producer_card.dart';
+import 'widgets/product_detail_sheet.dart';
 
 const _green = Color(0xFF2F6B45);
 const _ink = Color(0xFF1B2A20);
@@ -18,40 +20,151 @@ class ConsumerHomePage extends StatefulWidget {
   const ConsumerHomePage({
     required this.location,
     required this.onOpenExplore,
+    required this.onOpenOrders,
     super.key,
   });
 
   final ConfirmedLocation location;
   final VoidCallback onOpenExplore;
+  final VoidCallback onOpenOrders;
 
   @override
   State<ConsumerHomePage> createState() => _ConsumerHomePageState();
 }
 
 class _ConsumerHomePageState extends State<ConsumerHomePage> {
-  late Future<List<_HomeSale>> _sales;
-  String? _selectedCategory;
-  String _search = '';
+  late double _latitude = widget.location.latitude;
+  late double _longitude = widget.location.longitude;
+  late String _locationLabel = widget.location.city;
+  bool _locating = false;
+
+  late Future<List<ProductPost>> _productsFuture = _loadProducts();
+  late Future<List<RecentOrder>> _ordersFuture = _loadOrders();
+  List<ProductPost> _lastLoadedProducts = const [];
+
+  bool _searchOpen = false;
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    _sales = _fetchNearbySales(widget.location);
+    _useCurrentLocation();
   }
 
-  void _retry() => setState(() => _sales = _fetchNearbySales(widget.location));
-
-  void _toggleCategory(String key) {
-    setState(() => _selectedCategory = _selectedCategory == key ? null : key);
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
-  void _openSaleDetails(_HomeSale sale) {
+  Future<List<ProductPost>> _loadProducts() async {
+    final products = await fetchNearbyProducts(
+      latitude: _latitude,
+      longitude: _longitude,
+    );
+    _lastLoadedProducts = products;
+    return products;
+  }
+
+  Future<List<RecentOrder>> _loadOrders() => fetchMyOrders();
+
+  void _retryProducts() => setState(() => _productsFuture = _loadProducts());
+  void _retryOrders() => setState(() => _ordersFuture = _loadOrders());
+
+  // Location defaults to the phone's physical position (matching Explore's
+  // behaviour) and falls back to the confirmed signup address when GPS is
+  // unavailable, denied, or unsupported by the current browser.
+  Future<void> _useCurrentLocation() async {
+    if (_locating) return;
+    setState(() => _locating = true);
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+      final current = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      setState(() {
+        _latitude = current.latitude;
+        _longitude = current.longitude;
+        _locationLabel = localizeText(context, 'Current location');
+        _productsFuture = _loadProducts();
+      });
+    } catch (_) {
+      // Keep using the confirmed registration location when live GPS is
+      // unavailable, denied, or unsupported by the current browser.
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  void _openCategoryPicker() {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _HomeSaleDetailsSheet(sale: sale),
+      builder:
+          (_) => CategoryPickerSheet(
+            onSelect: (category) => _openProductFeed(category: category),
+          ),
     );
+  }
+
+  void _openProductFeed({ProductCategory? category, String query = ''}) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder:
+            (_) => ProductFeedPage(
+              title:
+                  category != null
+                      ? localizeText(context, category.label)
+                      : localizeText(context, 'Hot Sales'),
+              products: _lastLoadedProducts,
+              initialCategory: category?.key,
+              initialQuery: query,
+              onOpenExplore: widget.onOpenExplore,
+            ),
+      ),
+    );
+  }
+
+  void _openProducerFeed(String title, List<ProducerSummary> producers) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder:
+            (_) => ProducerFeedPage(
+              title: title,
+              producers: producers,
+              onOpenExplore: widget.onOpenExplore,
+            ),
+      ),
+    );
+  }
+
+  void _openProductDetails(ProductPost product) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder:
+          (_) => ProductDetailSheet(
+            product: product,
+            onOpenExplore: widget.onOpenExplore,
+          ),
+    );
+  }
+
+  void _submitSearch(String query) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return;
+    setState(() => _searchOpen = false);
+    _openProductFeed(query: trimmed);
   }
 
   @override
@@ -59,403 +172,179 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
     color: _cream,
     child: SafeArea(
       bottom: false,
-      child: FutureBuilder<List<_HomeSale>>(
-        future: _sales,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return _HomeMessage(
-              message: snapshot.error.toString().replaceFirst(
-                'Bad state: ',
-                '',
-              ),
-              onRetry: _retry,
-            );
-          }
-          final sales = snapshot.data ?? const [];
-          final query = _search.trim().toLowerCase();
-          final hotSales =
-              sales.where((sale) {
-                if (_selectedCategory != null &&
-                    !_matchesCategory(sale, _selectedCategory!)) {
-                  return false;
-                }
-                if (query.isEmpty) return true;
-                return sale.titleFor(context).toLowerCase().contains(query) ||
-                    sale.farmName.toLowerCase().contains(query);
-              }).toList();
-          final followed = sales.where((sale) => sale.isFollowed).toList();
-          final events = _upcomingEvents(sales);
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(18, 10, 18, 30),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 10, 18, 30),
+        children: [
+          _HomeHeader(
+            locationLabel: _locationLabel,
+            locating: _locating,
+            onRelocate: _useCurrentLocation,
+            searchOpen: _searchOpen,
+            onToggleSearch:
+                () => setState(() {
+                  _searchOpen = !_searchOpen;
+                  if (!_searchOpen) {
+                    _searchController.clear();
+                    _searchQuery = '';
+                  }
+                }),
+          ),
+          if (_searchOpen) ...[
+            const SizedBox(height: 12),
+            _SearchPanel(
+              controller: _searchController,
+              query: _searchQuery,
+              products: _lastLoadedProducts,
+              onQueryChanged: (value) => setState(() => _searchQuery = value),
+              onSubmit: _submitSearch,
+              onPickCategory:
+                  (category) => setState(() {
+                    _searchOpen = false;
+                    _openProductFeed(category: category);
+                  }),
+              onPickProduct: (product) {
+                setState(() => _searchOpen = false);
+                _openProductDetails(product);
+              },
+            ),
+          ],
+          const SizedBox(height: 22),
+          Row(
             children: [
-              _HomeHeader(
-                locationLabel: widget.location.city,
-                onRefresh: _retry,
-                onSearchChanged: (value) => setState(() => _search = value),
-              ),
-              const SizedBox(height: 18),
-              SizedBox(
-                height: 92,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _categories.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 14),
-                  itemBuilder:
-                      (_, index) => _CategoryCircle(
-                        category: _categories[index],
-                        selected: _selectedCategory == _categories[index].key,
-                        onTap: () => _toggleCategory(_categories[index].key),
-                      ),
+              Expanded(
+                child: _SectionHeader(
+                  title: localizeText(context, 'Product categories'),
                 ),
               ),
-              const SizedBox(height: 26),
-              _SectionHeader(title: localizeText(context, 'Hot sales near you')),
-              const SizedBox(height: 12),
-              if (hotSales.isEmpty)
-                _InlineEmptyNote(
-                  text: localizeText(
-                    context,
-                    'No Hot Sales match right now.',
-                  ),
-                )
-              else
-                SizedBox(
-                  height: 226,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: hotSales.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 12),
-                    itemBuilder:
-                        (_, index) => _HomeSaleCard(
-                          sale: hotSales[index],
-                          onTap: () => _openSaleDetails(hotSales[index]),
-                        ),
-                  ),
-                ),
-              const SizedBox(height: 26),
-              _SectionHeader(
-                title: localizeText(context, 'From farms you follow'),
+              TextButton(
+                onPressed: _openCategoryPicker,
+                child: Text(localizeText(context, 'Show all')),
               ),
-              const SizedBox(height: 12),
-              if (followed.isEmpty)
-                _InlineEmptyNote(
-                  text: localizeText(
-                    context,
-                    'Follow farms in Explore to see their Hot Sales here.',
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              for (final category
+                  in kProductCategories.take(kHomeCategoryPreviewCount))
+                Expanded(
+                  child: _CategoryCircle(
+                    category: category,
+                    onTap: () => _openProductFeed(category: category),
                   ),
-                  actionLabel: localizeText(context, 'Go to Explore'),
-                  onAction: widget.onOpenExplore,
-                )
-              else
-                SizedBox(
-                  height: 226,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: followed.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 12),
-                    itemBuilder:
-                        (_, index) => _HomeSaleCard(
-                          sale: followed[index],
-                          onTap: () => _openSaleDetails(followed[index]),
-                        ),
-                  ),
-                ),
-              const SizedBox(height: 26),
-              _SectionHeader(
-                title: localizeText(context, 'Upcoming near you'),
-              ),
-              const SizedBox(height: 12),
-              if (events.isEmpty)
-                _InlineEmptyNote(
-                  text: localizeText(
-                    context,
-                    'No upcoming pickups nearby yet.',
-                  ),
-                )
-              else
-                Column(
-                  children: [
-                    for (final event in events)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _HomeEventCard(event: event),
-                      ),
-                  ],
                 ),
             ],
-          );
-        },
+          ),
+          const SizedBox(height: 26),
+          FutureBuilder<List<RecentOrder>>(
+            future: _ordersFuture,
+            builder:
+                (context, snapshot) => _RecentOrdersSection(
+                  connectionState: snapshot.connectionState,
+                  error: snapshot.error,
+                  orders: snapshot.data ?? const [],
+                  onRetry: _retryOrders,
+                  onDiscoverCategories: _openCategoryPicker,
+                  onOpenExplore: widget.onOpenExplore,
+                  onShowAll: widget.onOpenOrders,
+                ),
+          ),
+          const SizedBox(height: 26),
+          FutureBuilder<List<ProductPost>>(
+            future: _productsFuture,
+            builder: (context, snapshot) {
+              final producers = groupProducers(snapshot.data ?? const []);
+              final favorites =
+                  producers.where((producer) => producer.isFollowed).toList();
+              return _FavoriteProducersSection(
+                connectionState: snapshot.connectionState,
+                error: snapshot.error,
+                favorites: favorites,
+                onRetry: _retryProducts,
+                onOpenExplore: widget.onOpenExplore,
+                onDiscoverProducer:
+                    () => _openProducerFeed(
+                      localizeText(context, 'Producers near you'),
+                      producers,
+                    ),
+                onShowAll:
+                    () => _openProducerFeed(
+                      localizeText(context, 'Favorite producers'),
+                      favorites,
+                    ),
+              );
+            },
+          ),
+          const SizedBox(height: 26),
+          FutureBuilder<List<RecentOrder>>(
+            future: _ordersFuture,
+            builder:
+                (context, snapshot) => _UpcomingPickupsSection(
+                  connectionState: snapshot.connectionState,
+                  error: snapshot.error,
+                  orders: snapshot.data ?? const [],
+                  onRetry: _retryOrders,
+                ),
+          ),
+        ],
       ),
     ),
   );
 }
 
-// ---- data ----
-
-class _HomeCategory {
-  const _HomeCategory(this.key, this.label, this.icon);
-  final String key;
-  final String label;
-  final IconData icon;
-}
-
-const _categories = [
-  _HomeCategory('VEGETABLES', 'Vegetables', Icons.eco_outlined),
-  _HomeCategory('MEAT', 'Meat', Icons.kebab_dining_outlined),
-  _HomeCategory('EGGS', 'Eggs', Icons.egg_outlined),
-  _HomeCategory('DAIRY', 'Dairy', Icons.icecream_outlined),
-  _HomeCategory('HONEY', 'Honey', Icons.hive_outlined),
-];
-
-bool _matchesCategory(_HomeSale sale, String key) {
-  final raw = sale.categoryKey?.toUpperCase().trim();
-  if (raw == null || raw.isEmpty) return false;
-  return raw == key || raw.contains(key) || key.contains(raw);
-}
-
-class _HomeSale {
-  _HomeSale(this.json);
-  final Map<String, dynamic> json;
-
-  String get id => json['id'] as String;
-  String get farmId => json['farmId'] as String;
-  String? get categoryKey => json['categoryKey'] as String?;
-  String get originalTitle => json['originalTitle'] as String;
-  String get originalDescription => json['description'] as String;
-  String get sourceLanguage =>
-      (json['detectedLanguage'] as String? ??
-              json['originalLanguage'] as String? ??
-              'en')
-          .toLowerCase();
-
-  Map<String, dynamic>? _translationFor(String locale) {
-    for (final item in (json['translations'] as List<dynamic>? ?? const [])) {
-      final translation = item as Map<String, dynamic>;
-      if (translation['locale'] == locale &&
-          translation['status'] == 'COMPLETED') {
-        return translation;
-      }
-    }
-    return null;
-  }
-
-  String titleFor(BuildContext context) {
-    final locale = Localizations.localeOf(context).languageCode;
-    return _translationFor(locale)?['title'] as String? ?? originalTitle;
-  }
-
-  String descriptionFor(BuildContext context) {
-    final locale = Localizations.localeOf(context).languageCode;
-    return _translationFor(locale)?['description'] as String? ??
-        originalDescription;
-  }
-
-  String get farmName => json['farmName'] as String;
-  String? get farmProfilePhotoUrl => json['farmProfilePhotoUrl'] as String?;
-  bool get isFollowed => json['isFollowed'] as bool? ?? false;
-  double get distanceKm => (json['distanceKm'] as num).toDouble();
-  int get priceCents => (json['priceCents'] as num).toInt();
-  String get unit =>
-      (json['customUnit'] as String?) ?? (json['unit'] as String).toLowerCase();
-  String unitFor(BuildContext context) =>
-      json['customUnit'] as String? ?? localizeText(context, unit);
-  Uint8List get imageBytes => base64Decode(json['imageBase64'] as String);
-  String priceFor(BuildContext context) =>
-      '€${(priceCents / 100).toStringAsFixed(2)} / ${unitFor(context)}';
-  List<_HomeRekoRing> get rekoRings =>
-      ((json['rekoRings'] as List<dynamic>?) ?? const [])
-          .map((ring) => _HomeRekoRing(ring as Map<String, dynamic>))
-          .toList();
-}
-
-class _HomeRekoRing {
-  const _HomeRekoRing(this.json);
-  final Map<String, dynamic> json;
-  String get id => json['id'] as String;
-  String get name => json['name'] as String;
-  String get municipality => json['municipality'] as String? ?? '';
-  Map<String, dynamic>? get _schedule =>
-      json['schedule'] as Map<String, dynamic>?;
-  int? get weekday => _schedule?['weekday'] as int?;
-  String? get startTime => _schedule?['startTime'] as String?;
-  String? get endTime => _schedule?['endTime'] as String?;
-}
-
-class _HomeEvent {
-  const _HomeEvent({
-    required this.ringName,
-    required this.municipality,
-    required this.farmName,
-    required this.occurrence,
-    required this.startTime,
-    required this.endTime,
-  });
-  final String ringName;
-  final String municipality;
-  final String farmName;
-  final DateTime occurrence;
-  final String startTime;
-  final String endTime;
-
-  String dayLabel() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final day = DateTime(occurrence.year, occurrence.month, occurrence.day);
-    final diff = day.difference(today).inDays;
-    if (diff == 0) return 'Today';
-    if (diff == 1) return 'Tomorrow';
-    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return names[occurrence.weekday - 1];
-  }
-}
-
-DateTime? _nextOccurrence(int weekday, String startTime) {
-  if (weekday < 1 || weekday > 7) return null;
-  final parts = startTime.split(':');
-  final hour = int.tryParse(parts.isNotEmpty ? parts[0] : '');
-  if (hour == null) return null;
-  final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
-  final now = DateTime.now();
-  final daysUntil = (weekday - now.weekday) % 7;
-  var candidate = DateTime(
-    now.year,
-    now.month,
-    now.day,
-    hour,
-    minute,
-  ).add(Duration(days: daysUntil));
-  if (candidate.isBefore(now)) candidate = candidate.add(const Duration(days: 7));
-  return candidate;
-}
-
-// A REKO pickup ring is a shared, weekly-recurring pickup point that can
-// serve several farms. We surface the next occurrence per ring (deduped by
-// id) as the closest thing to a "farm event" the backend currently models.
-List<_HomeEvent> _upcomingEvents(List<_HomeSale> sales) {
-  final byRing = <String, _HomeEvent>{};
-  for (final sale in sales) {
-    for (final ring in sale.rekoRings) {
-      if (byRing.containsKey(ring.id)) continue;
-      final weekday = ring.weekday;
-      final start = ring.startTime;
-      if (weekday == null || start == null) continue;
-      final occurrence = _nextOccurrence(weekday, start);
-      if (occurrence == null) continue;
-      byRing[ring.id] = _HomeEvent(
-        ringName: ring.name,
-        municipality: ring.municipality,
-        farmName: sale.farmName,
-        occurrence: occurrence,
-        startTime: start,
-        endTime: ring.endTime ?? '',
-      );
-    }
-  }
-  final events = byRing.values.toList()
-    ..sort((a, b) => a.occurrence.compareTo(b.occurrence));
-  return events.take(6).toList();
-}
-
-Future<List<_HomeSale>> _fetchNearbySales(ConfirmedLocation location) async {
-  final token = await FirebaseAuth.instance.currentUser?.getIdToken();
-  if (token == null) throw StateError('Please sign in again.');
-  final dio = Dio(
-    BaseOptions(
-      baseUrl: const String.fromEnvironment(
-        'FRSH_API_URL',
-        defaultValue: 'https://frshnearby-api.onrender.com/graphql',
-      ),
-    ),
-  );
-  final response = await dio.post<Map<String, dynamic>>(
-    '',
-    data: {
-      'query': '''query NearbyHotSales(\$latitude: Float!, \$longitude: Float!) {
-        nearbyHotSales(radiusKm: 50, limit: 50, latitude: \$latitude, longitude: \$longitude) {
-          id categoryKey originalLanguage detectedLanguage originalTitle description unit customUnit quantityStep priceCents quantity
-          productionDetail availableAtFarm
-          translations { locale title description productionDetail status }
-          imageMimeType imageBase64 farmId farmName farmProfilePhotoUrl
-          farmOwnerId farmCoverPhotoUrl farmDescription followerCount isFollowed
-          latitude longitude farmAddress farmCity distanceKm
-          rekoRings { id name municipality regionName addressLine postalCode
-            schedule { frequency weekday startTime endTime timezone }
-          }
-        }
-      }''',
-      'variables': {
-        'latitude': location.latitude,
-        'longitude': location.longitude,
-      },
-    },
-    options: Options(headers: {'authorization': 'Bearer $token'}),
-  );
-  final body = response.data ?? const {};
-  final errors = body['errors'] as List<dynamic>?;
-  if (errors?.isNotEmpty == true) {
-    throw StateError(
-      (errors!.first as Map<String, dynamic>)['message'] as String? ??
-          'Could not load nearby Hot Sales.',
-    );
-  }
-  final data = body['data'] as Map<String, dynamic>?;
-  final loaded = ((data?['nearbyHotSales'] as List<dynamic>?) ?? const [])
-      .map((item) => _HomeSale(item as Map<String, dynamic>))
-      .toList();
-  loaded.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
-  return loaded;
-}
-
-// ---- widgets ----
+// ---- header + search ----
 
 class _HomeHeader extends StatelessWidget {
   const _HomeHeader({
     required this.locationLabel,
-    required this.onRefresh,
-    required this.onSearchChanged,
+    required this.locating,
+    required this.onRelocate,
+    required this.searchOpen,
+    required this.onToggleSearch,
   });
+
   final String locationLabel;
-  final VoidCallback onRefresh;
-  final ValueChanged<String> onSearchChanged;
+  final bool locating;
+  final VoidCallback onRelocate;
+  final bool searchOpen;
+  final VoidCallback onToggleSearch;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) => Row(
     children: [
-      Row(
-        children: [
-          const Icon(Icons.location_on_rounded, color: _green, size: 20),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              locationLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-            ),
-          ),
-          IconButton(
-            tooltip: localizeText(context, 'Refresh'),
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
+      IconButton(
+        tooltip: localizeText(context, 'Search a product'),
+        onPressed: onToggleSearch,
+        icon: Icon(searchOpen ? Icons.close_rounded : Icons.search_rounded),
       ),
-      const SizedBox(height: 8),
-      TextField(
-        onChanged: onSearchChanged,
-        decoration: InputDecoration(
-          hintText: localizeText(context, 'Search Hot Sales'),
-          prefixIcon: const Icon(Icons.search_rounded),
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(vertical: 14),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
+      const Spacer(),
+      InkWell(
+        borderRadius: BorderRadius.circular(99),
+        onTap: locating ? null : onRelocate,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (locating)
+                const SizedBox.square(
+                  dimension: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                const Icon(Icons.location_on_rounded, color: _green, size: 18),
+              const SizedBox(width: 4),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 150),
+                child: Text(
+                  locationLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                ),
+              ),
+              const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: _muted),
+            ],
           ),
         ),
       ),
@@ -463,69 +352,168 @@ class _HomeHeader extends StatelessWidget {
   );
 }
 
-class _CategoryCircle extends StatelessWidget {
-  const _CategoryCircle({
-    required this.category,
-    required this.selected,
-    required this.onTap,
+class _SearchPanel extends StatelessWidget {
+  const _SearchPanel({
+    required this.controller,
+    required this.query,
+    required this.products,
+    required this.onQueryChanged,
+    required this.onSubmit,
+    required this.onPickCategory,
+    required this.onPickProduct,
   });
-  final _HomeCategory category;
-  final bool selected;
+
+  final TextEditingController controller;
+  final String query;
+  final List<ProductPost> products;
+  final ValueChanged<String> onQueryChanged;
+  final ValueChanged<String> onSubmit;
+  final ValueChanged<ProductCategory> onPickCategory;
+  final ValueChanged<ProductPost> onPickProduct;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = query.trim().toLowerCase();
+    final matchingCategories =
+        trimmed.isEmpty
+            ? const <ProductCategory>[]
+            : kProductCategories
+                .where((c) => c.label.toLowerCase().contains(trimmed))
+                .take(4)
+                .toList();
+    final matchingProducts =
+        trimmed.isEmpty
+            ? const <ProductPost>[]
+            : products
+                .where(
+                  (p) =>
+                      p.titleFor(context).toLowerCase().contains(trimmed) ||
+                      p.farmName.toLowerCase().contains(trimmed),
+                )
+                .take(6)
+                .toList();
+    final hasResults =
+        matchingCategories.isNotEmpty || matchingProducts.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _line),
+      ),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: controller,
+            autofocus: true,
+            onChanged: onQueryChanged,
+            onSubmitted: onSubmit,
+            decoration: InputDecoration(
+              hintText: localizeText(context, 'Search a product'),
+              prefixIcon: const Icon(Icons.search_rounded),
+              filled: true,
+              fillColor: const Color(0xFFF3F2EA),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          if (trimmed.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            if (!hasResults)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  localizeText(context, 'No results — search again.'),
+                  style: const TextStyle(color: _muted),
+                ),
+              )
+            else ...[
+              for (final category in matchingCategories)
+                ListTile(
+                  dense: true,
+                  leading: Icon(category.icon, color: _green),
+                  title: Text(localizeText(context, category.label)),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => onPickCategory(category),
+                ),
+              for (final product in matchingProducts)
+                ListTile(
+                  dense: true,
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      product.imageBytes,
+                      width: 34,
+                      height: 34,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  title: Text(
+                    product.titleFor(context),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    product.farmName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => onPickProduct(product),
+                ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ---- categories ----
+
+class _CategoryCircle extends StatelessWidget {
+  const _CategoryCircle({required this.category, required this.onTap});
+  final ProductCategory category;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) => InkWell(
     onTap: onTap,
     borderRadius: BorderRadius.circular(18),
-    child: SizedBox(
-      width: 66,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 58,
-            height: 58,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected ? _green : Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: selected ? _green : _line,
-                width: selected ? 0 : 1,
-              ),
-              boxShadow:
-                  selected
-                      ? null
-                      : const [
-                        BoxShadow(
-                          color: Colors.black12,
-                          blurRadius: 6,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-            ),
-            child: Icon(
-              category.icon,
-              color: selected ? Colors.white : _green,
-            ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 52,
+          height: 52,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(color: _line),
+            boxShadow: const [
+              BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2)),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            category.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              color: selected ? _green : _ink,
-            ),
-          ),
-        ],
-      ),
+          child: Icon(category.icon, color: _green),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          localizeText(context, category.label),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _ink),
+        ),
+      ],
     ),
   );
 }
+
+// ---- shared section chrome ----
 
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.title});
@@ -537,12 +525,10 @@ class _SectionHeader extends StatelessWidget {
   );
 }
 
-class _InlineEmptyNote extends StatelessWidget {
-  const _InlineEmptyNote({required this.text, this.actionLabel, this.onAction});
-  final String text;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-
+class _SectionError extends StatelessWidget {
+  const _SectionError({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
   @override
   Widget build(BuildContext context) => Container(
     width: double.infinity,
@@ -555,270 +541,452 @@ class _InlineEmptyNote extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(text, style: const TextStyle(color: _muted)),
-        if (actionLabel != null && onAction != null) ...[
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: onAction,
-            style: TextButton.styleFrom(padding: EdgeInsets.zero),
-            child: Text(actionLabel!),
-          ),
-        ],
+        Text(message, style: const TextStyle(color: _muted)),
+        const SizedBox(height: 8),
+        TextButton(onPressed: onRetry, child: Text(localizeText(context, 'Try again'))),
       ],
     ),
   );
 }
 
-class _PricePill extends StatelessWidget {
-  const _PricePill({required this.text});
+class _TwoButtonEmptyState extends StatelessWidget {
+  const _TwoButtonEmptyState({
+    required this.text,
+    required this.primaryLabel,
+    required this.onPrimary,
+    required this.secondaryLabel,
+    required this.onSecondary,
+  });
   final String text;
+  final String primaryLabel;
+  final VoidCallback onPrimary;
+  final String secondaryLabel;
+  final VoidCallback onSecondary;
+
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    width: double.infinity,
+    padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: .94),
-      borderRadius: BorderRadius.circular(99),
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: _line),
     ),
-    child: Text(
-      text,
-      style: const TextStyle(color: _green, fontSize: 10.5, fontWeight: FontWeight.w900),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(text, style: const TextStyle(color: _muted)),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(onPressed: onPrimary, child: Text(primaryLabel)),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton(onPressed: onSecondary, child: Text(secondaryLabel)),
+            ),
+          ],
+        ),
+      ],
     ),
   );
 }
 
-class _HomeSaleCard extends StatelessWidget {
-  const _HomeSaleCard({required this.sale, required this.onTap});
-  final _HomeSale sale;
-  final VoidCallback onTap;
+Widget _loadingRow() => const SizedBox(
+  height: 96,
+  child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
+);
+
+// ---- recent orders ----
+
+class _RecentOrdersSection extends StatelessWidget {
+  const _RecentOrdersSection({
+    required this.connectionState,
+    required this.error,
+    required this.orders,
+    required this.onRetry,
+    required this.onDiscoverCategories,
+    required this.onOpenExplore,
+    required this.onShowAll,
+  });
+
+  final ConnectionState connectionState;
+  final Object? error;
+  final List<RecentOrder> orders;
+  final VoidCallback onRetry;
+  final VoidCallback onDiscoverCategories;
+  final VoidCallback onOpenExplore;
+  final VoidCallback onShowAll;
 
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(20),
-    child: Container(
-      width: 168,
+  Widget build(BuildContext context) {
+    final header = Row(
+      children: [
+        Expanded(
+          child: _SectionHeader(title: localizeText(context, 'Your recent orders')),
+        ),
+        if (orders.isNotEmpty)
+          TextButton(onPressed: onShowAll, child: Text(localizeText(context, 'See all'))),
+      ],
+    );
+    if (connectionState != ConnectionState.done) {
+      return Column(children: [header, const SizedBox(height: 12), _loadingRow()]);
+    }
+    if (error != null) {
+      return Column(
+        children: [
+          header,
+          const SizedBox(height: 12),
+          _SectionError(
+            message: error.toString().replaceFirst('Bad state: ', ''),
+            onRetry: onRetry,
+          ),
+        ],
+      );
+    }
+    if (orders.isEmpty) {
+      return Column(
+        children: [
+          header,
+          const SizedBox(height: 12),
+          _TwoButtonEmptyState(
+            text: localizeText(context, "You haven't ordered anything yet."),
+            primaryLabel: localizeText(context, 'Discover categories'),
+            onPrimary: onDiscoverCategories,
+            secondaryLabel: localizeText(context, 'Go to map'),
+            onSecondary: onOpenExplore,
+          ),
+        ],
+      );
+    }
+    return Column(
+      children: [
+        header,
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 108,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: orders.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder: (_, index) => _RecentOrderCard(order: orders[index]),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RecentOrderCard extends StatelessWidget {
+  const _RecentOrderCard({required this.order});
+  final RecentOrder order;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = order.items;
+    final first = items.isEmpty ? null : items.first;
+    return Container(
+      width: 240,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _line),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(15),
-            child: Stack(
+          if (first != null)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.memory(
+                first.imageBytes,
+                width: 68,
+                height: 68,
+                fit: BoxFit.cover,
+              ),
+            ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Image.memory(
-                  sale.imageBytes,
-                  height: 108,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
+                Text(
+                  order.farmName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
                 ),
-                Positioned(
-                  left: 7,
-                  bottom: 7,
-                  child: _PricePill(text: sale.priceFor(context)),
+                const SizedBox(height: 3),
+                Text(
+                  items.length == 1
+                      ? (first?.title ?? '')
+                      : '${items.length} ${localizeText(context, 'items')}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: _muted, fontSize: 11.5),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE6F0E1),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Text(
+                    _statusLabel(context, order.status),
+                    style: const TextStyle(
+                      color: _green,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 9),
-          Text(
-            sale.titleFor(context),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              const Icon(Icons.storefront_rounded, size: 13, color: _green),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  sale.farmName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _green,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 3),
-          Text(
-            '${sale.distanceKm.toStringAsFixed(1)} km away',
-            style: const TextStyle(color: _muted, fontSize: 11.5),
-          ),
         ],
       ),
-    ),
-  );
+    );
+  }
+
+  String _statusLabel(BuildContext context, String status) => switch (status) {
+    'REQUESTED' => localizeText(context, 'Requested'),
+    'ACCEPTED' => localizeText(context, 'Accepted'),
+    'REJECTED' => localizeText(context, 'Rejected'),
+    'READY_FOR_PICKUP' => localizeText(context, 'Ready for pickup'),
+    'COMPLETED' => localizeText(context, 'Completed'),
+    'CANCELLED' => localizeText(context, 'Cancelled'),
+    _ => status,
+  };
 }
 
-class _HomeEventCard extends StatelessWidget {
-  const _HomeEventCard({required this.event});
-  final _HomeEvent event;
+// ---- favorite producers ----
+
+class _FavoriteProducersSection extends StatelessWidget {
+  const _FavoriteProducersSection({
+    required this.connectionState,
+    required this.error,
+    required this.favorites,
+    required this.onRetry,
+    required this.onOpenExplore,
+    required this.onDiscoverProducer,
+    required this.onShowAll,
+  });
+
+  final ConnectionState connectionState;
+  final Object? error;
+  final List<ProducerSummary> favorites;
+  final VoidCallback onRetry;
+  final VoidCallback onOpenExplore;
+  final VoidCallback onDiscoverProducer;
+  final VoidCallback onShowAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final header = Row(
+      children: [
+        Expanded(
+          child: _SectionHeader(title: localizeText(context, 'Favorite producers')),
+        ),
+        if (favorites.isNotEmpty)
+          TextButton(onPressed: onShowAll, child: Text(localizeText(context, 'See all'))),
+      ],
+    );
+    if (connectionState != ConnectionState.done) {
+      return Column(children: [header, const SizedBox(height: 12), _loadingRow()]);
+    }
+    if (error != null) {
+      return Column(
+        children: [
+          header,
+          const SizedBox(height: 12),
+          _SectionError(
+            message: error.toString().replaceFirst('Bad state: ', ''),
+            onRetry: onRetry,
+          ),
+        ],
+      );
+    }
+    if (favorites.isEmpty) {
+      return Column(
+        children: [
+          header,
+          const SizedBox(height: 12),
+          _TwoButtonEmptyState(
+            text: localizeText(context, "You aren't following any producers yet."),
+            primaryLabel: localizeText(context, 'Discover producers'),
+            onPrimary: onDiscoverProducer,
+            secondaryLabel: localizeText(context, 'Go to map'),
+            onSecondary: onOpenExplore,
+          ),
+        ],
+      );
+    }
+    return Column(
+      children: [
+        header,
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 150,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: favorites.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder:
+                (context, index) => ProducerCard(
+                  producer: favorites[index],
+                  onTap:
+                      () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder:
+                              (_) => ProductFeedPage(
+                                title: favorites[index].farmName,
+                                products: favorites[index].products,
+                                onOpenExplore: onOpenExplore,
+                              ),
+                        ),
+                      ),
+                ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---- upcoming pickups ----
+
+class _UpcomingPickupsSection extends StatelessWidget {
+  const _UpcomingPickupsSection({
+    required this.connectionState,
+    required this.error,
+    required this.orders,
+    required this.onRetry,
+  });
+
+  final ConnectionState connectionState;
+  final Object? error;
+  final List<RecentOrder> orders;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final header = _SectionHeader(title: localizeText(context, 'Upcoming pickups'));
+    if (connectionState != ConnectionState.done) {
+      return Column(
+        children: [header, const SizedBox(height: 12), _loadingRow()],
+      );
+    }
+    if (error != null) {
+      return Column(
+        children: [
+          header,
+          const SizedBox(height: 12),
+          _SectionError(
+            message: error.toString().replaceFirst('Bad state: ', ''),
+            onRetry: onRetry,
+          ),
+        ],
+      );
+    }
+    final upcoming = orders.where((order) => order.isUpcoming).toList();
+    if (upcoming.isEmpty) {
+      return Column(
+        children: [
+          header,
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _line),
+            ),
+            child: Text(
+              localizeText(context, 'No upcoming pickups yet.'),
+              style: const TextStyle(color: _muted),
+            ),
+          ),
+        ],
+      );
+    }
+    return Column(
+      children: [
+        header,
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 100,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: upcoming.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder: (_, index) => _UpcomingPickupCard(order: upcoming[index]),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _UpcomingPickupCard extends StatelessWidget {
+  const _UpcomingPickupCard({required this.order});
+  final RecentOrder order;
 
   @override
   Widget build(BuildContext context) => Container(
+    width: 220,
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(18),
       border: Border.all(color: _line),
     ),
-    child: Row(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          decoration: BoxDecoration(
-            color: const Color(0xFFE6F0E1),
-            borderRadius: BorderRadius.circular(99),
-          ),
-          child: Text(
-            '${event.dayLabel()} ${event.startTime}'
-            '${event.endTime.isNotEmpty ? '–${event.endTime}' : ''}',
-            style: const TextStyle(
-              color: _green,
-              fontWeight: FontWeight.w800,
-              fontSize: 12,
+        Row(
+          children: [
+            const Icon(Icons.event_available_outlined, size: 16, color: _green),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                order.pickupName.isEmpty
+                    ? localizeText(context, 'Pickup')
+                    : order.pickupName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+              ),
             ),
-          ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                event.ringName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              Text(
-                [
-                  event.farmName,
-                  if (event.municipality.isNotEmpty) event.municipality,
-                ].join(' • '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: _muted, fontSize: 12),
-              ),
-            ],
-          ),
+        const SizedBox(height: 6),
+        Text(
+          order.farmName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: _green, fontWeight: FontWeight.w700, fontSize: 12),
         ),
+        if (order.pickupSchedule.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            order.pickupSchedule,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: _muted, fontSize: 11.5),
+          ),
+        ] else if (order.pickupAddress.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            order.pickupAddress,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: _muted, fontSize: 11.5),
+          ),
+        ],
       ],
-    ),
-  );
-}
-
-class _HomeMessage extends StatelessWidget {
-  const _HomeMessage({required this.message, required this.onRetry});
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.cloud_off_outlined, size: 40, color: _green),
-          const SizedBox(height: 12),
-          Text(message, textAlign: TextAlign.center),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Try again'),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _HomeSaleDetailsSheet extends StatelessWidget {
-  const _HomeSaleDetailsSheet({required this.sale});
-  final _HomeSale sale;
-
-  @override
-  Widget build(BuildContext context) => FractionallySizedBox(
-    heightFactor: .78,
-    child: Material(
-      color: _cream,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          const SizedBox(height: 10),
-          Container(
-            width: 42,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.black26,
-              borderRadius: BorderRadius.circular(99),
-            ),
-          ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: Image.memory(
-                    sale.imageBytes,
-                    height: 220,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        sale.titleFor(context),
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      sale.priceFor(context),
-                      style: const TextStyle(
-                        color: _green,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${sale.farmName} • ${sale.distanceKm.toStringAsFixed(1)} km away',
-                  style: const TextStyle(color: _muted),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  sale.descriptionFor(context),
-                  style: const TextStyle(height: 1.5),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     ),
   );
 }
