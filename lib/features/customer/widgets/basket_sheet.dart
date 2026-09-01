@@ -37,7 +37,7 @@ class _BasketSheetState extends State<BasketSheet> {
 
   List<ProductPost> get _activeSales =>
       widget.farmSales
-          .where((sale) => widget.basket.quantityFor(widget.farmId, sale.id) > 0)
+          .where((sale) => widget.basket.quantityFor(sale) > 0)
           .toList();
   bool get _farmEligible =>
       _activeSales.isNotEmpty && _activeSales.every((sale) => sale.availableAtFarm);
@@ -55,8 +55,7 @@ class _BasketSheetState extends State<BasketSheet> {
   double get _total => _activeSales.fold(
     0.0,
     (total, sale) =>
-        total +
-        widget.basket.quantityFor(widget.farmId, sale.id) * sale.priceCents / 100,
+        total + widget.basket.quantityFor(sale) * sale.priceCents / 100,
   );
 
   Future<void> _requestOrder() async {
@@ -160,23 +159,16 @@ class _BasketSheetState extends State<BasketSheet> {
                                   width: 142,
                                   child: QuantityControl(
                                     sale: sale,
-                                    selectedQuantity: widget.basket.quantityFor(
-                                      widget.farmId,
-                                      sale.id,
-                                    ),
+                                    selectedQuantity: widget.basket.quantityFor(sale),
                                     onAdd:
                                         () => widget.basket.changeQuantity(
-                                          widget.farmId,
-                                          sale.id,
+                                          sale,
                                           sale.quantityStep,
-                                          sale.quantity,
                                         ),
                                     onRemove:
                                         () => widget.basket.changeQuantity(
-                                          widget.farmId,
-                                          sale.id,
+                                          sale,
                                           -sale.quantityStep,
-                                          sale.quantity,
                                         ),
                                   ),
                                 ),

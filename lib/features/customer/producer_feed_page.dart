@@ -3,8 +3,8 @@ import 'package:flutter/material.dart' hide Text;
 import '../../l10n/localized_text.dart';
 import 'basket_controller.dart';
 import 'consumer_data.dart';
-import 'product_feed_page.dart';
 import 'widgets/producer_card.dart';
+import 'widgets/producer_profile_page.dart';
 
 const _ink = Color(0xFF1B2A20);
 const _muted = Color(0xFF66735F);
@@ -17,21 +17,23 @@ class ProducerFeedPage extends StatelessWidget {
     required this.title,
     required this.producers,
     required this.basket,
+    required this.onOpenOrders,
     super.key,
   });
 
   final String title;
   final List<ProducerSummary> producers;
   final BasketController basket;
+  final VoidCallback onOpenOrders;
 
-  void _openProducts(BuildContext context, ProducerSummary producer) {
+  void _openProfile(BuildContext context, ProducerSummary producer) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder:
-            (_) => ProductFeedPage(
-              title: producer.farmName,
-              products: producer.products,
+            (_) => ProducerProfilePage(
+              sales: producer.products,
               basket: basket,
+              onOpenOrders: onOpenOrders,
             ),
       ),
     );
@@ -66,7 +68,7 @@ class ProducerFeedPage extends StatelessWidget {
                   (context, index) => ProducerCard(
                     producer: producers[index],
                     width: double.infinity,
-                    onTap: () => _openProducts(context, producers[index]),
+                    onTap: () => _openProfile(context, producers[index]),
                   ),
             ),
   );

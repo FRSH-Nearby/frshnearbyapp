@@ -11,6 +11,7 @@ import 'product_feed_page.dart';
 import 'producer_feed_page.dart';
 import 'widgets/category_picker_sheet.dart';
 import 'widgets/producer_card.dart';
+import 'widgets/producer_profile_page.dart';
 import 'widgets/product_card.dart';
 import 'widgets/product_detail_sheet.dart';
 
@@ -25,12 +26,14 @@ class ConsumerHomePage extends StatefulWidget {
     required this.location,
     required this.basket,
     required this.onOpenExplore,
+    required this.onOpenOrders,
     super.key,
   });
 
   final ConfirmedLocation location;
   final BasketController basket;
   final VoidCallback onOpenExplore;
+  final VoidCallback onOpenOrders;
 
   @override
   State<ConsumerHomePage> createState() => _ConsumerHomePageState();
@@ -134,6 +137,7 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
               initialCategory: category?.key,
               initialQuery: query,
               basket: widget.basket,
+              onOpenOrders: widget.onOpenOrders,
             ),
       ),
     );
@@ -147,6 +151,7 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
               title: title,
               producers: producers,
               basket: widget.basket,
+              onOpenOrders: widget.onOpenOrders,
             ),
       ),
     );
@@ -162,6 +167,7 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
             product: product,
             allProducts: _lastLoadedProducts,
             basket: widget.basket,
+            onOpenOrders: widget.onOpenOrders,
           ),
     );
   }
@@ -310,6 +316,7 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
                 onRetry: _retryProducts,
                 onOpenExplore: widget.onOpenExplore,
                 basket: widget.basket,
+                onOpenOrders: widget.onOpenOrders,
                 onDiscoverProducer:
                     () => _openProducerFeed(
                       localizeText(context, 'Producers near you'),
@@ -758,12 +765,14 @@ class _FavoriteProducersSection extends StatelessWidget {
     required this.onDiscoverProducer,
     required this.onShowAll,
     required this.basket,
+    required this.onOpenOrders,
   });
 
   final ConnectionState connectionState;
   final Object? error;
   final List<ProducerSummary> favorites;
   final VoidCallback onRetry;
+  final VoidCallback onOpenOrders;
   final VoidCallback onOpenExplore;
   final VoidCallback onDiscoverProducer;
   final BasketController basket;
@@ -827,10 +836,10 @@ class _FavoriteProducersSection extends StatelessWidget {
                       () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder:
-                              (_) => ProductFeedPage(
-                                title: favorites[index].farmName,
-                                products: favorites[index].products,
+                              (_) => ProducerProfilePage(
+                                sales: favorites[index].products,
                                 basket: basket,
+                                onOpenOrders: onOpenOrders,
                               ),
                         ),
                       ),

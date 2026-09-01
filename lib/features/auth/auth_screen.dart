@@ -2592,6 +2592,10 @@ class _MainAppShellState extends State<_MainAppShell> {
     _coverPhotoUrl = widget.farmCoverPhotoUrl;
     _farmProfilePhotoUrl = widget.farmProfilePhotoUrl;
     _loadAccountMode();
+    // Restores any reservations still active from a previous session — the
+    // backend's cart is the source of truth, so this is what makes a
+    // reservation survive an app restart rather than just a tab switch.
+    _basket.loadFromServer();
   }
 
   @override
@@ -2774,6 +2778,7 @@ class _MainAppShellState extends State<_MainAppShell> {
                   location: widget.location!,
                   basket: _basket,
                   onOpenExplore: () => setState(() => _index = 1),
+                  onOpenOrders: () => setState(() => _index = 2),
                 ),
               if (widget.location == null)
                 const _FutureTab(
@@ -2784,8 +2789,9 @@ class _MainAppShellState extends State<_MainAppShell> {
                 ConsumerExplorePage(
                   location: widget.location!,
                   basket: _basket,
+                  onOpenOrders: () => setState(() => _index = 2),
                 ),
-              const OrdersScreen(seller: false),
+              OrdersScreen(seller: false, basket: _basket),
               _ConsumerProfilePage(
                 fullName: widget.fullName,
                 email: widget.email,

@@ -44,11 +44,32 @@ class ProductCard extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   Image.memory(product.imageBytes, fit: BoxFit.cover),
-                  Positioned(
-                    left: 7,
-                    bottom: 7,
-                    child: _Pill(text: product.priceFor(context)),
-                  ),
+                  // The nearby feed already excludes sold-out listings, but a
+                  // card can still go stale between load and view (someone
+                  // else buys the last unit) — this is a defensive cue for
+                  // that narrow window, not a fabricated status.
+                  if (product.quantity <= 0)
+                    Container(
+                      color: Colors.black.withValues(alpha: .45),
+                      alignment: Alignment.center,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          localizeText(context, 'Sold out'),
+                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11.5),
+                        ),
+                      ),
+                    )
+                  else
+                    Positioned(
+                      left: 7,
+                      bottom: 7,
+                      child: _Pill(text: product.priceFor(context)),
+                    ),
                 ],
               ),
             ),

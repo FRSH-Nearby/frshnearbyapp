@@ -5,6 +5,7 @@ import '../../../l10n/localized_text.dart';
 import '../basket_controller.dart';
 import '../consumer_data.dart';
 import 'basket_sheet.dart';
+import 'producer_profile_page.dart';
 import 'quantity_control.dart';
 
 const _green = Color(0xFF2F6B45);
@@ -22,6 +23,7 @@ class ProductDetailSheet extends StatelessWidget {
     required this.product,
     required this.allProducts,
     required this.basket,
+    required this.onOpenOrders,
     super.key,
   });
 
@@ -31,6 +33,43 @@ class ProductDetailSheet extends StatelessWidget {
   /// "Complete this farm order".
   final List<ProductPost> allProducts;
   final BasketController basket;
+
+  /// Switches the bottom nav to the Orders tab (Shopping cart sub-tab),
+  /// used by the "View cart" action on the add-to-cart confirmation.
+  final VoidCallback onOpenOrders;
+
+  void _openProducerProfile(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder:
+            (_) => ProducerProfilePage(
+              sales: allProducts.where((sale) => sale.farmId == product.farmId).toList(),
+              basket: basket,
+              onOpenOrders: onOpenOrders,
+            ),
+      ),
+    );
+  }
+
+  void _addToCart(BuildContext context) {
+    final wasEmpty = basket.quantityFor(product) <= 0;
+    basket.changeQuantity(product, product.quantityStep);
+    if (!wasEmpty) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '1 ${localizeText(context, 'product added to cart')}',
+        ),
+        action: SnackBarAction(
+          label: localizeText(context, 'View cart'),
+          onPressed: () {
+            Navigator.of(context).pop();
+            onOpenOrders();
+          },
+        ),
+      ),
+    );
+  }
 
   void _openCheckout(BuildContext context) {
     showModalBottomSheet<void>(
@@ -57,17 +96,14 @@ class ProductDetailSheet extends StatelessWidget {
     return AnimatedBuilder(
       animation: basket,
       builder: (context, _) {
-        final quantity = basket.quantityFor(product.farmId, product.id);
+        final quantity = basket.quantityFor(product);
         final farmLines = basket.lineCount(product.farmId);
         final farmTotal = allProducts
             .where((sale) => sale.farmId == product.farmId)
             .fold<double>(
               0,
               (total, sale) =>
-                  total +
-                  basket.quantityFor(product.farmId, sale.id) *
-                      sale.priceCents /
-                      100,
+                  total + basket.quantityFor(sale) * sale.priceCents / 100,
             );
 
         return FractionallySizedBox(
@@ -181,51 +217,59 @@ class ProductDetailSheet extends StatelessWidget {
                         style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
                       ),
                       const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(13),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
+                      Material(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        child: InkWell(
                           borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 22,
-                              backgroundColor: const Color(0xFFE5EFDF),
-                              backgroundImage:
-                                  product.farmProfilePhotoUrl?.isNotEmpty == true
-                                      ? NetworkImage(product.farmProfilePhotoUrl!)
-                                      : null,
-                              child:
-                                  product.farmProfilePhotoUrl?.isNotEmpty == true
-                                      ? null
-                                      : Text(
-                                        product.farmName.characters.first
-                                            .toUpperCase(),
-                                        style: const TextStyle(
-                                          color: _green,
-                                          fontWeight: FontWeight.w900,
-                                        ),
+                          onTap: () => _openProducerProfile(context),
+                          child: Padding(
+                            padding: const EdgeInsets.all(13),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 22,
+                                  backgroundColor: const Color(0xFFE5EFDF),
+                                  backgroundImage:
+                                      product.farmProfilePhotoUrl?.isNotEmpty == true
+                                          ? NetworkImage(product.farmProfilePhotoUrl!)
+                                          : null,
+                                  child:
+                                      product.farmProfilePhotoUrl?.isNotEmpty == true
+                                          ? null
+                                          : Text(
+                                            product.farmName.characters.first
+                                                .toUpperCase(),
+                                            style: const TextStyle(
+                                              color: _green,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                ),
+                                const SizedBox(width: 11),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        product.farmName,
+                                        style: const TextStyle(fontWeight: FontWeight.w900),
                                       ),
-                            ),
-                            const SizedBox(width: 11),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    product.farmName,
-                                    style: const TextStyle(fontWeight: FontWeight.w900),
+                                      if (product.farmLocation.isNotEmpty)
+                                        Text(
+                                          product.farmLocation,
+                                          style: const TextStyle(
+                                            color: _muted,
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                    ],
                                   ),
-                                  if (product.farmLocation.isNotEmpty)
-                                    Text(
-                                      product.farmLocation,
-                                      style: const TextStyle(color: _muted, fontSize: 12.5),
-                                    ),
-                                ],
-                              ),
+                                ),
+                                const Icon(Icons.chevron_right_rounded, color: _green),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
                       if (product.availableAtFarm ||
@@ -304,19 +348,11 @@ class ProductDetailSheet extends StatelessWidget {
                                   child: QuantityControl(
                                     sale: product,
                                     selectedQuantity: quantity,
-                                    onAdd:
-                                        () => basket.changeQuantity(
-                                          product.farmId,
-                                          product.id,
-                                          product.quantityStep,
-                                          product.quantity,
-                                        ),
+                                    onAdd: () => _addToCart(context),
                                     onRemove:
                                         () => basket.changeQuantity(
-                                          product.farmId,
-                                          product.id,
+                                          product,
                                           -product.quantityStep,
-                                          product.quantity,
                                         ),
                                   ),
                                 ),
@@ -351,23 +387,16 @@ class ProductDetailSheet extends StatelessWidget {
                             itemBuilder:
                                 (context, index) => _OtherFarmSaleTile(
                                   sale: otherFarmSales[index],
-                                  quantity: basket.quantityFor(
-                                    product.farmId,
-                                    otherFarmSales[index].id,
-                                  ),
+                                  quantity: basket.quantityFor(otherFarmSales[index]),
                                   onAdd:
                                       () => basket.changeQuantity(
-                                        product.farmId,
-                                        otherFarmSales[index].id,
+                                        otherFarmSales[index],
                                         otherFarmSales[index].quantityStep,
-                                        otherFarmSales[index].quantity,
                                       ),
                                   onRemove:
                                       () => basket.changeQuantity(
-                                        product.farmId,
-                                        otherFarmSales[index].id,
+                                        otherFarmSales[index],
                                         -otherFarmSales[index].quantityStep,
-                                        otherFarmSales[index].quantity,
                                       ),
                                 ),
                           ),

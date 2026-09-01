@@ -34,6 +34,7 @@ class ProductFeedPage extends StatefulWidget {
     required this.title,
     required this.products,
     required this.basket,
+    required this.onOpenOrders,
     this.initialCategory,
     this.initialQuery = '',
     super.key,
@@ -42,6 +43,7 @@ class ProductFeedPage extends StatefulWidget {
   final String title;
   final List<ProductPost> products;
   final BasketController basket;
+  final VoidCallback onOpenOrders;
   final String? initialCategory;
   final String initialQuery;
 
@@ -144,6 +146,7 @@ class _ProductFeedPageState extends State<ProductFeedPage> {
             product: product,
             allProducts: widget.products,
             basket: widget.basket,
+            onOpenOrders: widget.onOpenOrders,
           ),
     );
   }
