@@ -17,6 +17,7 @@ import '../customer/basket_controller.dart';
 import '../customer/consumer_explore.dart';
 import '../customer/consumer_home.dart';
 import '../orders/orders_screen.dart';
+import '../producer/producer_insights_page.dart';
 
 import 'auth_service.dart';
 import 'backend_service.dart';
@@ -2813,6 +2814,7 @@ class _MainAppShellState extends State<_MainAppShell> {
                 verificationStatus: widget.verificationStatus,
               ),
               const OrdersScreen(seller: true),
+              const ProducerInsightsPage(),
               _RevampedProfilePage(
                 type: _activeType,
                 fullName: widget.fullName,
@@ -2870,6 +2872,11 @@ class _MainAppShellState extends State<_MainAppShell> {
                 icon: const Icon(Icons.receipt_long_outlined),
                 selectedIcon: const Icon(Icons.receipt_long_rounded),
                 label: localizeText(context, 'Orders'),
+              ),
+              NavigationDestination(
+                icon: const Icon(Icons.insights_outlined),
+                selectedIcon: const Icon(Icons.insights_rounded),
+                label: localizeText(context, 'Insights'),
               ),
               NavigationDestination(
                 icon: const Icon(Icons.person_outline_rounded),
