@@ -2,13 +2,11 @@
 // chart, top products, fulfilment method split, best sales day, customer
 // highlights, and PDF export — all driven by the backend's producerInsights
 // query (see insights_data.dart / the backend's insights module).
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart' hide Text;
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../l10n/localized_text.dart';
@@ -94,11 +92,13 @@ class _ProducerInsightsPageState extends State<ProducerInsightsPage> {
     }
   }
 
+  // XFile.fromData keeps the PDF entirely in memory rather than writing to a
+  // temp file — dart:io has no meaningful implementation on Flutter Web,
+  // and this same page is part of the web build (see deploy-pages.yml), so
+  // any dart:io usage here would break that build, not just look untidy.
   Future<void> _shareBytes(Uint8List bytes, String filename) async {
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/$filename');
-    await file.writeAsBytes(bytes, flush: true);
-    await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
+    final file = XFile.fromData(bytes, name: filename, mimeType: 'application/pdf');
+    await SharePlus.instance.share(ShareParams(files: [file]));
   }
 
   void _showError(Object error) {
