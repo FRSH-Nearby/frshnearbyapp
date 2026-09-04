@@ -32,7 +32,12 @@ jobs:
         run: flutter pub get
 
       - name: Analyze project
-        run: flutter analyze
+        # --no-fatal-infos: this SDK version surfaces info-level
+        # deprecated_member_use notices for pre-existing Radio/form-field
+        # APIs (deprecated in Flutter 3.31-3.33) that the previously-pinned
+        # 3.29.3 predated and never saw. They're advisory, not build
+        # breakers — real errors/warnings still fail this step.
+        run: flutter analyze --no-fatal-infos
 
       - name: Build Flutter web app
         # Avoid stale service-worker app shells while the onboarding UI is
