@@ -132,10 +132,10 @@ class InsightsCustomerHighlights {
   InsightsCustomerHighlights(this.json);
   final Map<String, dynamic> json;
   int get newCustomers => (json['newCustomers'] as num).toInt();
-  int get returningCustomers => (json['returningCustomers'] as num).toInt();
+  int get recurringCustomers => (json['recurringCustomers'] as num).toInt();
   double? get newCustomersChangePercent => (json['newCustomersChangePercent'] as num?)?.toDouble();
-  double? get returningCustomersChangePercent =>
-      (json['returningCustomersChangePercent'] as num?)?.toDouble();
+  double? get recurringCustomersChangePercent =>
+      (json['recurringCustomersChangePercent'] as num?)?.toDouble();
 }
 
 class ProducerInsightsReport {
@@ -206,7 +206,7 @@ const _reportFields = '''
   topProducts { hotSaleId title imageMimeType imageBase64 quantity unit revenueCents shareOfTopRevenue }
   fulfilment { pickupType orderCount percent }
   bestSalesDay { date totalCents orderCount }
-  customerHighlights { newCustomers returningCustomers newCustomersChangePercent returningCustomersChangePercent }
+  customerHighlights { newCustomers recurringCustomers newCustomersChangePercent recurringCustomersChangePercent }
 ''';
 
 Future<ProducerInsightsReport> fetchProducerInsights(InsightsRange range) async {

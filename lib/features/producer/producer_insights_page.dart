@@ -927,9 +927,9 @@ class _CustomerHighlightsCard extends StatelessWidget {
               Expanded(
                 child: _highlightColumn(
                   context,
-                  localizeText(context, 'Returning'),
-                  highlights.returningCustomers,
-                  highlights.returningCustomersChangePercent,
+                  localizeText(context, 'Recurring'),
+                  highlights.recurringCustomers,
+                  highlights.recurringCustomersChangePercent,
                 ),
               ),
             ],
