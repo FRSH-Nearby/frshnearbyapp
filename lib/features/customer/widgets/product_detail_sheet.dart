@@ -51,24 +51,39 @@ class ProductDetailSheet extends StatelessWidget {
     );
   }
 
-  void _addToCart(BuildContext context) {
+  Future<void> _addToCart(BuildContext context) async {
     final wasEmpty = basket.quantityFor(product) <= 0;
-    basket.changeQuantity(product, product.quantityStep);
+    await basket.changeQuantity(product, product.quantityStep);
+    if (!context.mounted) return;
+    if (basket.lastError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(basket.lastError!)),
+      );
+      return;
+    }
     if (!wasEmpty) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '1 ${localizeText(context, 'product added to cart')}',
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            '1 ${localizeText(context, 'product added to cart')}',
+          ),
+          action: SnackBarAction(
+            label: localizeText(context, 'View cart'),
+            onPressed: () {
+              // Switch tabs first: this must run even if the sheet that
+              // captured this context has already been dismissed by the
+              // time the action is tapped, which would make popping it
+              // (a nice-to-have, not the point of this action) a no-op.
+              onOpenOrders();
+              if (context.mounted && Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              }
+            },
+          ),
         ),
-        action: SnackBarAction(
-          label: localizeText(context, 'View cart'),
-          onPressed: () {
-            Navigator.of(context).pop();
-            onOpenOrders();
-          },
-        ),
-      ),
-    );
+      );
   }
 
   void _openCheckout(BuildContext context) {

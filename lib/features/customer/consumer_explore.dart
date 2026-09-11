@@ -70,7 +70,7 @@ class _ConsumerExplorePageState extends State<ConsumerExplorePage> {
     return loaded;
   }
 
-  void _retry() => setState(() => _sales = _load(_position));
+  void _retry() => setState(() { _sales = _load(_position); });
 
   Future<void> _useCurrentLocation() async {
     if (_locating) return;

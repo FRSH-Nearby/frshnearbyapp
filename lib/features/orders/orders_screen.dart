@@ -18,9 +18,14 @@ const _muted = Color(0xFF66735F);
 const _line = Color(0xFFE7E5DB);
 const _cream = Color(0xFFFBFAF5);
 
-/// Producer order lifecycle: REQUESTED/ACCEPTED live under "Orders",
-/// READY_FOR_PICKUP under "On delivery", everything terminal under
-/// "History". The backend only allows forward transitions between these
+/// Producer order lifecycle: new orders skip the seller-approval
+/// (REQUESTED) step only — they're created straight into ACCEPTED (see
+/// cart.service.ts / orders.service.ts on the backend), landing under
+/// "Orders" with a single "Ready for the delivery" action, no Accept/
+/// Reject. READY_FOR_PICKUP lives under "On delivery", everything terminal
+/// under "History". REQUESTED still exists as a backend state (and still
+/// shows under "Orders") only for orders created before this change; no
+/// new order ever enters it. The backend only allows forward transitions
 /// (REQUESTED→ACCEPTED/REJECTED→READY_FOR_PICKUP→COMPLETED, no way back),
 /// so there's deliberately no "send back" action here — a button for one
 /// would just fail against the API every time.
@@ -113,7 +118,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       'mutation(\$id: String!) { markFarmNotificationRead(id: \$id) }',
       {'id': id},
     );
-    if (mounted) setState(() => _notifications = _loadNotifications());
+    if (mounted) setState(() { _notifications = _loadNotifications(); });
   }
 
   Future<void> _status(_Order order, String status) async {
@@ -131,7 +136,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           },
         );
       }
-      if (mounted) setState(() => _orders = _load());
+      if (mounted) setState(() { _orders = _load(); });
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -166,7 +171,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             farmSales: farmSales,
             basket: widget.basket!,
           ),
-    ).then((_) => setState(() => _orders = _load()));
+    ).then((_) => setState(() { _orders = _load(); }));
   }
 
   @override
@@ -209,20 +214,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         tab: _SellerTab.orders,
                         ordersFuture: _orders,
                         notificationsFuture: _notifications,
-                        onRetry: () => setState(() => _orders = _load()),
+                        onRetry: () => setState(() { _orders = _load(); }),
                         onReadNotification: _readNotification,
                         onOpenCard: _openFullCard,
                       ),
                       _SellerOrdersTab(
                         tab: _SellerTab.onDelivery,
                         ordersFuture: _orders,
-                        onRetry: () => setState(() => _orders = _load()),
+                        onRetry: () => setState(() { _orders = _load(); }),
                         onOpenCard: _openFullCard,
                       ),
                       _SellerOrdersTab(
                         tab: _SellerTab.history,
                         ordersFuture: _orders,
-                        onRetry: () => setState(() => _orders = _load()),
+                        onRetry: () => setState(() { _orders = _load(); }),
                         onOpenCard: _openFullCard,
                       ),
                     ] else ...[
@@ -232,7 +237,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       ),
                       _MyOrdersTab(
                         ordersFuture: _orders,
-                        onRetry: () => setState(() => _orders = _load()),
+                        onRetry: () => setState(() { _orders = _load(); }),
                         onOpenCard: _openFullCard,
                       ),
                     ],
@@ -531,6 +536,28 @@ class _MyOrdersTab extends StatelessWidget {
 
 // ---- seller orderbook ----
 
+/// How many orders are sitting in the seller's "Orders" tab (needing a
+/// "Ready for the delivery" tap) — used for the bottom-nav badge so a
+/// producer can see this from any tab without opening Orders. Deliberately
+/// a minimal `id status` query, not the full order payload `_load` fetches.
+Future<int> fetchPendingSellerOrderCount() async {
+  final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+  if (token == null) return 0;
+  final dio = Dio(BaseOptions(baseUrl: ApiConfig.graphqlUrl));
+  final response = await dio.post<Map<String, dynamic>>(
+    '',
+    data: {'query': 'query { sellerOrders { id status } }'},
+    options: Options(headers: {'authorization': 'Bearer $token'}),
+  );
+  final body = response.data ?? const {};
+  if ((body['errors'] as List<dynamic>?)?.isNotEmpty == true) return 0;
+  final orders = (body['data']?['sellerOrders'] as List<dynamic>?) ?? const [];
+  return orders
+      .cast<Map<String, dynamic>>()
+      .where((order) => order['status'] == 'REQUESTED' || order['status'] == 'ACCEPTED')
+      .length;
+}
+
 List<_Order> _forTab(List<_Order> orders, _SellerTab tab) => orders.where((order) {
   switch (tab) {
     case _SellerTab.orders:
@@ -823,7 +850,7 @@ class _OrderThumbnail extends StatelessWidget {
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
                   ),
                 ),
-                _StatusChip(status: order.status),
+                _StatusChip(status: order.status, seller: seller),
               ],
             ),
             const SizedBox(height: 3),
@@ -898,7 +925,7 @@ class _FullOrderCard extends StatelessWidget {
                         style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
                       ),
                     ),
-                    _StatusChip(status: order.status),
+                    _StatusChip(status: order.status, seller: seller),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -1061,12 +1088,15 @@ class _ActionRow extends StatelessWidget {
         ),
       );
     }
-    if (!seller && order.status == 'REQUESTED') {
+    if (!seller &&
+        (order.status == 'REQUESTED' ||
+            order.status == 'ACCEPTED' ||
+            order.status == 'READY_FOR_PICKUP')) {
       return SizedBox(
         width: double.infinity,
         child: OutlinedButton(
           onPressed: () => onStatus('CANCELLED'),
-          child: Text(localizeText(context, 'Cancel request')),
+          child: Text(localizeText(context, 'Cancel order')),
         ),
       );
     }
@@ -1075,8 +1105,9 @@ class _ActionRow extends StatelessWidget {
 }
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
+  const _StatusChip({required this.status, required this.seller});
   final String status;
+  final bool seller;
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
@@ -1092,7 +1123,12 @@ class _StatusChip extends StatelessWidget {
 
   String _label(BuildContext context) => switch (status) {
     'REQUESTED' => localizeText(context, 'Requested'),
-    'ACCEPTED' => localizeText(context, 'Accepted'),
+    // Orders start life here now (no seller-approval step) — the seller
+    // still sees this as "Accepted" (it's their to-do list, one "Ready for
+    // the delivery" tap away from moving on), but a consumer just sees
+    // their order as placed.
+    'ACCEPTED' =>
+      seller ? localizeText(context, 'Accepted') : localizeText(context, 'Ordered'),
     'REJECTED' => localizeText(context, 'Rejected'),
     'READY_FOR_PICKUP' => localizeText(context, 'Ready for pickup'),
     'COMPLETED' => localizeText(context, 'Completed'),

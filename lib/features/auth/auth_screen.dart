@@ -2587,6 +2587,13 @@ class _MainAppShellState extends State<_MainAppShell> {
   // the same order at checkout.
   final _basket = BasketController();
 
+  // Seller-side "Orders" bottom-nav badge: how many orders are waiting for
+  // a "Ready for the delivery" tap, refreshed periodically so it's visible
+  // from any tab without opening Orders. Errors (including "not a seller
+  // account") resolve to 0 — see fetchPendingSellerOrderCount.
+  int _pendingOrderCount = 0;
+  Timer? _pendingOrdersTimer;
+
   @override
   void initState() {
     super.initState();
@@ -2597,11 +2604,22 @@ class _MainAppShellState extends State<_MainAppShell> {
     // backend's cart is the source of truth, so this is what makes a
     // reservation survive an app restart rather than just a tab switch.
     _basket.loadFromServer();
+    _refreshPendingOrderCount();
+    _pendingOrdersTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _refreshPendingOrderCount(),
+    );
+  }
+
+  Future<void> _refreshPendingOrderCount() async {
+    final count = await fetchPendingSellerOrderCount();
+    if (mounted) setState(() => _pendingOrderCount = count);
   }
 
   @override
   void dispose() {
     _basket.dispose();
+    _pendingOrdersTimer?.cancel();
     super.dispose();
   }
 
@@ -2869,8 +2887,16 @@ class _MainAppShellState extends State<_MainAppShell> {
                 label: localizeText(context, 'Dashboard'),
               ),
               NavigationDestination(
-                icon: const Icon(Icons.receipt_long_outlined),
-                selectedIcon: const Icon(Icons.receipt_long_rounded),
+                icon: Badge.count(
+                  count: _pendingOrderCount,
+                  isLabelVisible: _pendingOrderCount > 0,
+                  child: const Icon(Icons.receipt_long_outlined),
+                ),
+                selectedIcon: Badge.count(
+                  count: _pendingOrderCount,
+                  isLabelVisible: _pendingOrderCount > 0,
+                  child: const Icon(Icons.receipt_long_rounded),
+                ),
                 label: localizeText(context, 'Orders'),
               ),
               NavigationDestination(
@@ -2927,7 +2953,10 @@ class _MainAppShellState extends State<_MainAppShell> {
         ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _index,
-          onDestinationSelected: (value) => setState(() => _index = value),
+          onDestinationSelected: (value) {
+            setState(() => _index = value);
+            if (!isConsumerMode) _refreshPendingOrderCount();
+          },
           backgroundColor: Colors.white,
           indicatorColor: const Color(0xFFDCEBD7),
           destinations: destinations,

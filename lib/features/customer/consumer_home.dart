@@ -78,7 +78,7 @@ class _ConsumerHomePageState extends State<ConsumerHomePage> {
     return products;
   }
 
-  void _retryProducts() => setState(() => _productsFuture = _loadProducts());
+  void _retryProducts() => setState(() { _productsFuture = _loadProducts(); });
 
   // Location defaults to the phone's physical position (matching Explore's
   // behaviour) and falls back to the confirmed signup address when GPS is

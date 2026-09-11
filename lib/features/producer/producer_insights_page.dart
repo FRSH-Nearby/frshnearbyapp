@@ -328,7 +328,7 @@ class _ReportBody extends StatelessWidget {
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 10,
           crossAxisSpacing: 10,
-          childAspectRatio: 1.55,
+          childAspectRatio: 1.1,
           children: [
             _MetricCard(
               icon: Icons.euro_rounded,
